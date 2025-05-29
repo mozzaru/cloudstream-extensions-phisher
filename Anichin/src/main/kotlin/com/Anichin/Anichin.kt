@@ -107,16 +107,35 @@ class Anichin : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val document = app.get(data).document
-        document.select(".mobius option").forEach { server->
-            val base64 = server.attr("value")
-            val decoded=base64Decode(base64)
+    
+        document.select(".mobius option").forEach { server ->
+            val base64 = server.attr("value").trim()
+            val decoded = base64Decode(base64)
             val doc = Jsoup.parse(decoded)
-            val href=doc.select("iframe").attr("src")
-            val url=Http(href)
-            loadExtractor(url,subtitleCallback, callback)
+            val rawHref = doc.select("iframe").attr("src").trim()
+    
+            if (rawHref.isNotBlank()) {
+                // Tambahkan skema jika perlu
+                val href = if (rawHref.startsWith("http")) rawHref else "https:$rawHref"
+    
+                try {
+                    val url = Http(href)
+                    loadExtractor(url, subtitleCallback, callback)
+                } catch (e: Exception) {
+                    println("❌ Gagal load URL: $href -> ${e.message}")
+                }
+            } else {
+                println("⚠️ iframe src kosong pada server: $base64")
+            }
         }
+    
         return true
     }
 }
