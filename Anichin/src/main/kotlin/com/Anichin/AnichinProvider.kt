@@ -16,8 +16,9 @@ class AnimexinProvider: BasePlugin() {
         registerExtractorAPI(Dailymotion())
         registerExtractorAPI(Okrulink())
         registerExtractorAPI(Rumble())
-        registerExtractorAPI(RPMShare())
+        registerExtractorAPI(RpmShare())
         registerExtractorAPI(StreamRuby())
         registerExtractorAPI(NewPlayer())
+        registerExtractorAPI(VidGuard())
     }
 }

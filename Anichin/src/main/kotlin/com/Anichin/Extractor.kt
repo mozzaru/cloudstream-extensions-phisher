@@ -23,17 +23,16 @@ open class Vtbe : ExtractorApi() {
         val extractedpack =response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
         JsUnpacker(extractedpack).unpack()?.let { unPacked ->
             Regex("sources:\\[\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
-                val type = getTypeFromUrl(videoUrl)
-                    return listOf(
-                        newExtractorLink(
-                            name,
-                            name,
-                            videoUrl,
-                            type
-                        ) {
-                            this.quality = 0
-                        }
-                    )
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
 
                 )
             }
@@ -42,107 +41,199 @@ open class Vtbe : ExtractorApi() {
     }
 }
 
-class Rumble : ExtractorApi() {
-    override val name = "Rumble"
-    override val mainUrl = "https://rumble.com"
-    override val requiresReferer = false
-    
-    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        val doc = app.get(url).document
-    
-        val scriptData = doc.select("script").mapNotNull { it.data() }
-            .find { it.contains("source") && it.contains("video") } ?: return null
-    
-        val link = Regex("\"source\"\\s*:\\s*\"(https[^\"]+)\"")
-            .find(scriptData)?.groupValues?.get(1) ?: return null
-    
-        return listOf(
-            newExtractorLink(
-                name,
-                name,
-                videoUrl,
-                type
-            ) {
-                this.quality = 0 // jika tidak tahu resolusinya
-            }
-        )
-    }
-}
-
-class RPMShare : ExtractorApi() {
-    override val name = "RPMShare"
-    override val mainUrl = "https://anichin.rpmvid.com"
+class Okrulink : ExtractorApi() {
+    override var name = "Okrulink"
+    override var mainUrl = "https://ok.ru"
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        val apiUrl = "https://anichin.rpmvid.com/api/v1/player?t=80b1d68c4e0fd0b1514ef99021f80610e9396557fcc9a2b087fc99374"
-        val response = app.get(apiUrl, referer = referer ?: mainUrl).document
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\\[\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
+        }
+        return null
+    }
+}
 
-        val videoUrl = response.select("video source").attr("src")
-                if (videoUrl.isNotEmpty()) {
-                    val type = getTypeFromUrl(videoUrl) // Tambahkan ini
-                    return listOf(
-                        newExtractorLink(
-                            name,
-                            name,
-                            videoUrl,
-                            type // Ganti dari ExtractorLinkType.M3U8
-                        ) {
-                            this.quality = 0
-                        }
-                    )
-                }
-           
+class Dailymotion : ExtractorApi() {
+    override var name = "Dailymotion"
+    override var mainUrl = "https://www.dailymotion.com"
+    override val requiresReferer = true
+
+    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\$\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
+        }
+        return null
+    }
+}
+
+class Rumble : ExtractorApi() {
+    override var name = "Rumble"
+    override var mainUrl = "https://rumble.com"
+    override val requiresReferer = true
+
+    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\$\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
         }
         return null
     }
 }
 
 class StreamRuby : ExtractorApi() {
-    override val name = "StreamRuby"
-    override val mainUrl = "https://streamruby.net"
+    override var name = "StreamRuby"
+    override var mainUrl = "https://streamruby.com"
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        val apiUrl = "https://streamruby.com/api/v1/player?t=80b1d68c4e0fd0b1514ef99021f80610e9396557fcc9a2b087fc99374"
-        val response = app.get(apiUrl, referer = referer ?: mainUrl).document
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\\[\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
+        }
+        return null
+    }
+}
 
-        val videoUrl = response.select("video source").attr("src")
-                if (videoUrl.isNotEmpty()) {
-                    val type = getTypeFromUrl(videoUrl) // Tambahkan ini
-                    return listOf(
-                        newExtractorLink(
-                            name,
-                            name,
-                            videoUrl,
-                            type // Ganti dari ExtractorLinkType.M3U8
-                        ) {
-                            this.quality = 0
-                        }
-                    )
-                }
-          
+class VidGuard : ExtractorApi() {
+    override var name = "VidGuard"
+    override var mainUrl = "https://vidguard.to"
+    override val requiresReferer = true
+
+    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\$\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
+        }
+        return null
+    }
+}
+
+class RpmShare : ExtractorApi() {
+    override var name = "RPMShare"
+    override var mainUrl = "https://rpmshare.com"
+    override val requiresReferer = true
+
+    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\$\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
         }
         return null
     }
 }
 
 class NewPlayer : ExtractorApi() {
-    override val name = "NewPlayer"
-    override val mainUrl = "https://storage.googleapis.com"
-    override val requiresReferer = false
+    override var name = "NewPlayer"
+    override var mainUrl = "https://newplayer.xyz"
+    override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        return listOf(
-            newExtractorLink(
-                name,
-                name,
-                url,
-                type
-            ) {
-                this.quality = 0 // jika tidak tahu resolusinya
+        val response = app.get(url, referer = mainUrl).document
+        val extractedPack = response.selectFirst("script:containsData(function(p,a,c,k,e,d))")?.data().toString()
+        
+        JsUnpacker(extractedPack).unpack()?.let { unPacked ->
+            Regex("sources:\$\\{file:\"(.*?)\"").find(unPacked)?.groupValues?.get(1)?.let { link ->
+                return listOf(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        url = link,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: ""
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
             }
-        )
+        }
+        return null
     }
 }
 
@@ -158,14 +249,6 @@ class waaw : StreamSB() {
 class FileMoonSx : Filesim() {
     override val mainUrl = "https://filemoon.sx"
     override val name = "FileMoonSx"
-}
-
-fun getTypeFromUrl(videoUrl: String): ExtractorLinkType {
-    return when {
-        videoUrl.endsWith(".m3u8") -> ExtractorLinkType.M3U8
-        videoUrl.endsWith(".mpd") -> ExtractorLinkType.DASH
-        else -> ExtractorLinkType.UNKNOWN // fallback untuk .mp4, .webm, dll
-    }
 }
 
 fun Http(url: String): String {
