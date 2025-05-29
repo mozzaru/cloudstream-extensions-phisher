@@ -18,5 +18,6 @@ class AnimexinProvider: BasePlugin() {
         registerExtractorAPI(Rumble())
         registerExtractorAPI(RPMShare())
         registerExtractorAPI(StreamRuby())
+        registerExtractorAPI(NewPlayer())
     }
 }

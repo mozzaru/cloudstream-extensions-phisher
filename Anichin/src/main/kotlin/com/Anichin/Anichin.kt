@@ -18,7 +18,7 @@ class Anichin : MainAPI() {
         "anime/?status=ongoing&order&order=popular" to "Popular",
         "anime/?" to "Donghua",
         "anime/?status=&type=movie&page=" to "Movies",
-        "anime/?sub=raw" to "Anime (RAW)",
+        "anime/?order=popular" to "Populer Hari Ini" // <- Tambahan baru
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
