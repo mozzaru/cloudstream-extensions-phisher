@@ -1,5 +1,5 @@
 // use an integer for version numbers
-version = 3
+version = 4
 
 
 cloudstream {
@@ -7,7 +7,7 @@ cloudstream {
 
     description = "Anime and Movies"
     language    = "id"
-    authors = listOf("Phisher98")
+    authors = listOf("Phisher98", "mozzaru")
 
     /**
     * Status int as the following:
