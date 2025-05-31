@@ -14,17 +14,16 @@ class Anichin : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
     override val mainPage = mainPageOf(
-        "anime/?status=ongoing&order=update" to "Recently Updated",
-        "anime/?status=ongoing&order&order=popular" to "Popular",
-        "anime/?" to "Donghua",
+        "anime/?order=update" to "Semua Rilisan Terbaru", // Ini memuat semua update
+        "anime/?status=ongoing&order=update" to "Ongoing",
+        "anime/?status=completed&order=update" to "Completed",
         "anime/?status=&type=movie&page=" to "Movies",
         "anime/?order=popular" to "Populer Hari Ini"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("$mainUrl/${request.data}&page=$page").document
-
-        val home = document.select("article, div.utao").mapNotNull { it.toSearchResult() }
+        val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
             list = HomePageList(
@@ -32,27 +31,18 @@ class Anichin : MainAPI() {
                 list = home,
                 isHorizontalImages = false
             ),
-            hasNext = true
+            hasNext = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()?.let { it > page } == true
         )
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val aTag = selectFirst("a") ?: return null
-        val img = aTag.selectFirst("img")
+        val aTag = selectFirst("div.bsx > a") ?: return null
+        val title = aTag.attr("title").ifEmpty { aTag.text() }
         val href = fixUrl(aTag.attr("href"))
-        val posterUrl = fixUrlNull(img?.attr("src"))
+        val img = aTag.selectFirst("img")
+        val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        val titleAttr = aTag.attr("title").takeIf { it.isNotBlank() }
-        val altAttr = img?.attr("alt").takeIf { !it.isNullOrBlank() }
-        val fallbackText = aTag.text().takeIf { it.isNotBlank() }
-        val titleRaw = titleAttr ?: altAttr ?: fallbackText ?: return null
-
-        val epInfo = selectFirst(".epx")?.text()?.trim()
-        val subInfo = selectFirst(".bt > span")?.text()?.trim()
-
-        val fullTitle = listOfNotNull(titleRaw.trim(), epInfo, subInfo).joinToString(" • ")
-
-        return newMovieSearchResponse(fullTitle, href, TvType.Movie) {
+        return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
         }
     }
@@ -61,7 +51,7 @@ class Anichin : MainAPI() {
         val searchResponse = mutableListOf<SearchResponse>()
         for (i in 1..3) {
             val document = app.get("${mainUrl}/page/$i/?s=$query").document
-            val results = document.select("article, div.utao").mapNotNull { it.toSearchResult() }
+            val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
             if (results.isEmpty()) break
             searchResponse.addAll(results)
         }
@@ -113,11 +103,7 @@ class Anichin : MainAPI() {
 
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
-            val decoded = try {
-                base64Decode(base64)
-            } catch (e: Exception) {
-                return@forEach
-            }
+            val decoded = base64Decode(base64)
             val doc = Jsoup.parse(decoded)
             val rawHref = doc.select("iframe").attr("src").trim()
 
