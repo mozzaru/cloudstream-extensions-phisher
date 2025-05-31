@@ -44,8 +44,8 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        // Default: use Anime, can adjust in load()
-        val tvType = TvType.Anime
+        val isMovie = href.contains("/movie", ignoreCase = true)
+        val tvType = if (isMovie) TvType.Movie else TvType.Anime
 
         return newAnimeSearchResponse(title, href, tvType) {
             this.posterUrl = posterUrl
@@ -74,7 +74,7 @@ class Anichin : MainAPI() {
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
 
         val episodeElements = document.select("div.episodelist > ul > li")
-        val isSeries = episodeElements.size > 1 || episodeElements.any { it.text().contains("Episode", true) }
+        val isSeries = document.select("div.episodelist").isNotEmpty()
 
         return if (isSeries) {
             val episodes = episodeElements.map {
@@ -93,8 +93,7 @@ class Anichin : MainAPI() {
                 this.plot = description
             }
         } else {
-            val watchHref = document.selectFirst("iframe")?.attr("src") ?: url
-            newMovieLoadResponse(title, url, TvType.Movie, watchHref) {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = description
             }
