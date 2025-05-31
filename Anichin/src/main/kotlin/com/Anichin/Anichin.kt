@@ -14,10 +14,10 @@ class Anichin : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
     override val mainPage = mainPageOf(
-        "anime/?order=update" to "Semua Rilisan Terbaru", // Ini memuat semua update
+        "anime/?order=update" to "Semua Rilisan Terbaru",
         "anime/?status=ongoing&order=update" to "Ongoing",
         "anime/?status=completed&order=update" to "Completed",
-        "anime/?status=&type=movie&page=" to "Movies",
+        "anime/?type=movie&order=update" to "Movies",
         "anime/?order=popular" to "Populer Hari Ini"
     )
 
@@ -25,19 +25,21 @@ class Anichin : MainAPI() {
         val document = app.get("$mainUrl/${request.data}&page=$page").document
         val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
+        val hasNext = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()?.let { it > page } ?: false
+
         return newHomePageResponse(
             list = HomePageList(
                 name = request.name,
                 list = home,
                 isHorizontalImages = false
             ),
-            hasNext = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()?.let { it > page } == true
+            hasNext = hasNext
         )
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
         val aTag = selectFirst("div.bsx > a") ?: return null
-        val title = aTag.attr("title").ifEmpty { aTag.text() }
+        val title = aTag.attr("title").ifBlank { aTag.text() }
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
