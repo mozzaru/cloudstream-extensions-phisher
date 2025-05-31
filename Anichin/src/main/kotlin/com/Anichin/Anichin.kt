@@ -1,9 +1,9 @@
 package com.Anichin
 
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import org.jsoup.Jsoup
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.club"
@@ -44,18 +44,9 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        // Deteksi dari URL atau badge apakah Movie
-        val isMovie = selectFirst(".typez")?.text()?.contains("Movie", true) == true || href.contains("/movie/", true)
-        val tvType = if (isMovie) TvType.Movie else TvType.Anime
-
-        return if (isMovie) {
-            newMovieSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
-            }
-        } else {
-            newAnimeSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
-            }
+        // Default ke Anime, karena jenis sebenarnya akan ditentukan di load()
+        return newMovieSearchResponse(title, href, TvType.Anime) {
+            this.posterUrl = posterUrl
         }
     }
 
@@ -82,9 +73,10 @@ class Anichin : MainAPI() {
 
         val episodeElements = document.select("div.episodelist > ul > li")
         val isSeries = episodeElements.isNotEmpty()
+        val tvType = if (isSeries) TvType.Anime else TvType.Movie
 
-        return if (isSeries) {
-            val episodes = episodeElements.mapIndexed { index, it ->
+        val episodes = if (isSeries) {
+            episodeElements.mapIndexed { index, it ->
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
                 val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim()
                 val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
@@ -93,12 +85,7 @@ class Anichin : MainAPI() {
                     this.name = if (!epName.isNullOrBlank()) epName else "Episode ${index + 1}"
                     this.posterUrl = epPoster
                 }
-            }
-
-            newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
-                this.posterUrl = poster
-                this.plot = description
-            }
+            }.reversed()
         } else {
             val firstOption = document.selectFirst(".mobius option")
             val base64 = firstOption?.attr("value")?.trim()
@@ -117,15 +104,15 @@ class Anichin : MainAPI() {
 
             if (playUrl == null) playUrl = url
 
-            val episode = newEpisode(playUrl) {
+            listOf(newEpisode(playUrl) {
                 name = "Movie"
                 posterUrl = poster
-            }
+            })
+        }
 
-            newTvSeriesLoadResponse(title, url, TvType.Movie, listOf(episode)) {
-                this.posterUrl = poster
-                this.plot = description
-            }
+        return newTvSeriesLoadResponse(title, url, tvType, episodes) {
+            this.posterUrl = poster
+            this.plot = description
         }
     }
 
