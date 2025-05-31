@@ -6,7 +6,7 @@ import com.lagradost.cloudstream3.extractors.Dailymotion
 import com.lagradost.cloudstream3.extractors.Okrulink
 
 @CloudstreamPlugin
-class AnimexinProvider: BasePlugin() {
+class AnimexinProvider : BasePlugin() {
     override fun load() {
         registerMainAPI(Anichin())
         registerExtractorAPI(Vtbe())
