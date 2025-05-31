@@ -13,17 +13,14 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
-    override val mainPage = mainPageOf(
-        "anime/?status=ongoing&order=update" to "Recently Updated",
-        "anime/?status=ongoing&order&order=popular" to "Popular",
-        "anime/?" to "Donghua",
-        "anime/?status=&type=movie&page=" to "Movies",
-        "anime/?order=popular" to "Populer Hari Ini"
+    override val mainPage = mainPageOf( // hanya satu: homepage rilisan terbaru
+        "" to "Rilisan Terbaru"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("$mainUrl/${request.data}&page=$page").document
-        val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+        if (page != 1) throw ErrorLoadingException("Tidak ada halaman berikutnya")
+        val document = app.get(mainUrl).document
+        val home = document.select("div.post-show > article").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
             list = HomePageList(
@@ -31,15 +28,22 @@ class Anichin : MainAPI() {
                 list = home,
                 isHorizontalImages = false
             ),
-            hasNext = true
+            hasNext = false
         )
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = select("div.bsx > a").attr("title") ?: return null
-        val href = fixUrl(select("div.bsx > a").attr("href"))
-        val posterUrl = fixUrlNull(select("div.bsx > a img").attr("src"))
-        return newMovieSearchResponse(title, href, TvType.Movie) {
+        val aTag = selectFirst("a") ?: return null
+        val titleRaw = aTag.attr("title").ifBlank { aTag.text() }.trim()
+        val epInfo = selectFirst(".epx")?.text()?.trim()
+        val subInfo = selectFirst(".bt > span")?.text()?.trim()
+
+        val fullTitle = listOfNotNull(titleRaw, epInfo, subInfo).joinToString(" • ")
+
+        val href = fixUrl(aTag.attr("href"))
+        val posterUrl = fixUrlNull(selectFirst("img")?.attr("src"))
+
+        return newMovieSearchResponse(fullTitle, href, TvType.Movie) {
             this.posterUrl = posterUrl
         }
     }
@@ -48,7 +52,14 @@ class Anichin : MainAPI() {
         val searchResponse = mutableListOf<SearchResponse>()
         for (i in 1..3) {
             val document = app.get("${mainUrl}/page/$i/?s=$query").document
-            val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+            val results = document.select("div.listupd > article").mapNotNull {
+                val title = it.select("div.bsx > a").attr("title") ?: return@mapNotNull null
+                val href = fixUrl(it.select("div.bsx > a").attr("href"))
+                val posterUrl = fixUrlNull(it.select("div.bsx > a img").attr("src"))
+                newMovieSearchResponse(title, href, TvType.Movie) {
+                    this.posterUrl = posterUrl
+                }
+            }
             if (results.isEmpty()) break
             searchResponse.addAll(results)
         }
