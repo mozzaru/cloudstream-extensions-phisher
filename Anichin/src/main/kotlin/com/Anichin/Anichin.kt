@@ -73,18 +73,14 @@ class Anichin : MainAPI() {
         }
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
 
-        // Update selector untuk mendeteksi episode dengan struktur umum Anichin
-        val episodeElements = document.select("div.episodelist > ul > li, div.bxcl ul li")
-        val isSeries = episodeElements.isNotEmpty()
+        val episodeElements = document.select("div.episodelist > ul > li")
+        val isSeries = document.select("div.episodelist").isNotEmpty()
 
         return if (isSeries) {
-            val episodes = episodeElements.mapNotNull {
-                val epHref = it.selectFirst("a")?.attr("href")?.trim().orEmpty()
-                if (epHref.isBlank()) return@mapNotNull null
-
-                val epName = it.selectFirst("span")?.text()?.trim()
-                    ?: it.text().trim()
-                val epPoster = it.selectFirst("img")?.attr("src")?.trim().orEmpty()
+            val episodes = episodeElements.map {
+                val epHref = it.selectFirst("a")?.attr("href").orEmpty()
+                val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim().orEmpty()
+                val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
 
                 newEpisode(epHref) {
                     this.name = if (epName.isNotBlank()) epName else "Episode"
@@ -114,19 +110,29 @@ class Anichin : MainAPI() {
 
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
-            val decoded = base64Decode(base64)
+            val decoded = try {
+                base64Decode(base64)
+            } catch (e: Exception) {
+                println("❌ Gagal decode base64: ${e.message}")
+                return@forEach
+            }
+
             val doc = Jsoup.parse(decoded)
-            val rawHref = doc.select("iframe").attr("src").trim()
+            val rawHref = doc.selectFirst("iframe")?.attr("src")?.trim().orEmpty()
 
             if (rawHref.isNotBlank()) {
                 val href = if (rawHref.startsWith("http")) rawHref else "https:$rawHref"
                 try {
-                    loadExtractor(href, subtitleCallback, callback)
+                    if (!href.contains("about:blank", true) && !href.contains("javascript", true)) {
+                        println("🎯 Memuat link: $href")
+                        loadExtractor(href, subtitleCallback, callback)
+                    }
                 } catch (e: Exception) {
                     println("❌ Gagal load URL: $href -> ${e.message}")
                 }
             }
         }
+
         return true
     }
 }
