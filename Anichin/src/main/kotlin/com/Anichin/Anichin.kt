@@ -44,31 +44,18 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        val tvType = detectTvTypeFromElement(href, title)
+        // Default: use Anime, can adjust in load()
+        val tvType = TvType.Anime
 
-        return when (tvType) {
-            TvType.Movie -> newMovieSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
-            }
-            TvType.Anime -> newAnimeSearchResponse(title, href, tvType) {
-                this.posterUrl = posterUrl
-            }
-            else -> null
-        }
-    }
-
-    private fun detectTvTypeFromElement(href: String, title: String): TvType {
-        return if (href.contains("/movie/") || title.contains("movie", ignoreCase = true)) {
-            TvType.Movie
-        } else {
-            TvType.Anime
+        return newAnimeSearchResponse(title, href, tvType) {
+            this.posterUrl = posterUrl
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
         for (i in 1..3) {
-            val document = app.get("${mainUrl}/page/$i/?s=$query").document
+            val document = app.get("$mainUrl/page/$i/?s=$query").document
             val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
             if (results.isEmpty()) break
             searchResponse.addAll(results)
@@ -86,16 +73,17 @@ class Anichin : MainAPI() {
         }
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
 
-        val isSeries = document.select("div.episodelist").isNotEmpty()
+        val episodeElements = document.select("div.episodelist > ul > li")
+        val isSeries = episodeElements.size > 1 || episodeElements.any { it.text().contains("Episode", true) }
 
         return if (isSeries) {
-            val episodes = document.select("div.episodelist > ul > li").map {
+            val episodes = episodeElements.map {
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
-                val epName = it.select("a span").text().substringAfter("-").substringBeforeLast("-").trim()
+                val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim().orEmpty()
                 val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
 
                 newEpisode(epHref) {
-                    this.name = epName
+                    this.name = if (epName.isNotBlank()) epName else "Episode"
                     this.posterUrl = epPoster
                 }
             }
