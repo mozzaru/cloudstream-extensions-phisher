@@ -13,15 +13,23 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
+    override val mainPage = mainPageOf(
+        "anime/?order=update" to "Semua Rilisan Terbaru",
+        "anime/?status=ongoing&order=update" to "Ongoing",
+        "anime/?status=completed&order=update" to "Completed",
+        "anime/?type=movie&order=update" to "Movies",
+        "anime/?order=popular" to "Populer Hari Ini"
+    )
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("$mainUrl/page/$page/").document
+        val document = app.get("$mainUrl/${request.data}&page=$page").document
         val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
         val hasNext = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()?.let { it > page } ?: false
 
         return newHomePageResponse(
             list = HomePageList(
-                name = "Semua Rilisan Terbaru",
+                name = request.name,
                 list = home,
                 isHorizontalImages = false
             ),
