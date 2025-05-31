@@ -54,33 +54,58 @@ class Anichin : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-
+    
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
         var poster = document.selectFirst("div.ime > img")?.attr("src").orEmpty()
         if (poster.isEmpty()) {
             poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
         }
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
-
+    
+        val episodeElements = document.select("div.episodelist > ul > li")
         val isSeries = document.select("div.episodelist").isNotEmpty()
+    
         return if (isSeries) {
-            val episodes = document.select("div.episodelist > ul > li").map {
+            val episodes = episodeElements.map {
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
-                val epName = it.select("a span").text().substringAfter("-").substringBeforeLast("-").trim()
+                val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim().orEmpty()
                 val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
-
+    
                 newEpisode(epHref) {
-                    this.name = epName
+                    this.name = if (epName.isNotBlank()) epName else "Episode"
                     this.posterUrl = epPoster
                 }
             }
+    
             newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
-            val watchHref = document.selectFirst("iframe")?.attr("src") ?: url
-            newMovieLoadResponse(title, url, TvType.Movie, watchHref) {
+            // Coba cari URL play dari option mobius (base64 iframe)
+            val firstOption = document.selectFirst(".mobius option")
+            val base64 = firstOption?.attr("value")?.trim()
+            var playUrl: String? = null
+    
+            if (!base64.isNullOrBlank()) {
+                try {
+                    val decoded = base64Decode(base64)
+                    val iframe = Jsoup.parse(decoded).selectFirst("iframe")
+                    val rawSrc = iframe?.attr("src")
+                    if (!rawSrc.isNullOrBlank()) {
+                        playUrl = if (rawSrc.startsWith("http")) rawSrc else "https:$rawSrc"
+                    }
+                } catch (_: Exception) {}
+            }
+    
+            if (playUrl == null) playUrl = url // fallback
+    
+            val episode = newEpisode(playUrl) {
+                name = "Movie"
+                posterUrl = poster
+            }
+    
+            newTvSeriesLoadResponse(title, url, TvType.Movie, listOf(episode)) {
                 this.posterUrl = poster
                 this.plot = description
             }
