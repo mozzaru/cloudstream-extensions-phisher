@@ -44,8 +44,7 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        // Default ke Anime, karena jenis sebenarnya akan ditentukan di load()
-        return newMovieSearchResponse(title, href, TvType.Anime) {
+        return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
         }
     }
@@ -63,7 +62,6 @@ class Anichin : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
         var poster = document.selectFirst("div.ime > img")?.attr("src").orEmpty()
         if (poster.isEmpty()) {
@@ -73,6 +71,7 @@ class Anichin : MainAPI() {
 
         val episodeElements = document.select("div.episodelist > ul > li")
         val isSeries = episodeElements.isNotEmpty()
+
         val tvType = if (isSeries) TvType.Anime else TvType.Movie
 
         val episodes = if (isSeries) {
