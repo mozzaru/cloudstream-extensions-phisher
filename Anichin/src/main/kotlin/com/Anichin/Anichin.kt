@@ -44,8 +44,18 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
+        // Deteksi dari URL atau badge apakah Movie
+        val isMovie = selectFirst(".typez")?.text()?.contains("Movie", true) == true || href.contains("/movie/", true)
+        val tvType = if (isMovie) TvType.Movie else TvType.Anime
+
+        return if (isMovie) {
+            newMovieSearchResponse(title, href, tvType) {
+                this.posterUrl = posterUrl
+            }
+        } else {
+            newAnimeSearchResponse(title, href, tvType) {
+                this.posterUrl = posterUrl
+            }
         }
     }
 
@@ -62,39 +72,38 @@ class Anichin : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-    
+
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
         var poster = document.selectFirst("div.ime > img")?.attr("src").orEmpty()
         if (poster.isEmpty()) {
             poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
         }
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
-    
+
         val episodeElements = document.select("div.episodelist > ul > li")
-        val isSeries = document.select("div.episodelist").isNotEmpty()
-    
+        val isSeries = episodeElements.isNotEmpty()
+
         return if (isSeries) {
-            val episodes = episodeElements.map {
+            val episodes = episodeElements.mapIndexed { index, it ->
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
-                val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim().orEmpty()
+                val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim()
                 val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
-    
+
                 newEpisode(epHref) {
-                    this.name = if (epName.isNotBlank()) epName else "Episode"
+                    this.name = if (!epName.isNullOrBlank()) epName else "Episode ${index + 1}"
                     this.posterUrl = epPoster
                 }
             }
-    
+
             newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
-            // Coba cari URL play dari option mobius (base64 iframe)
             val firstOption = document.selectFirst(".mobius option")
             val base64 = firstOption?.attr("value")?.trim()
             var playUrl: String? = null
-    
+
             if (!base64.isNullOrBlank()) {
                 try {
                     val decoded = base64Decode(base64)
@@ -105,14 +114,14 @@ class Anichin : MainAPI() {
                     }
                 } catch (_: Exception) {}
             }
-    
-            if (playUrl == null) playUrl = url // fallback
-    
+
+            if (playUrl == null) playUrl = url
+
             val episode = newEpisode(playUrl) {
                 name = "Movie"
                 posterUrl = poster
             }
-    
+
             newTvSeriesLoadResponse(title, url, TvType.Movie, listOf(episode)) {
                 this.posterUrl = poster
                 this.plot = description
