@@ -44,8 +44,24 @@ class Anichin : MainAPI() {
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
+        val tvType = detectTvTypeFromElement(href, title)
+
+        return when (tvType) {
+            TvType.Movie -> newMovieSearchResponse(title, href, tvType) {
+                this.posterUrl = posterUrl
+            }
+            TvType.Anime -> newAnimeSearchResponse(title, href, tvType) {
+                this.posterUrl = posterUrl
+            }
+            else -> null
+        }
+    }
+
+    private fun detectTvTypeFromElement(href: String, title: String): TvType {
+        return if (href.contains("/movie/") || title.contains("movie", ignoreCase = true)) {
+            TvType.Movie
+        } else {
+            TvType.Anime
         }
     }
 
@@ -71,6 +87,7 @@ class Anichin : MainAPI() {
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
 
         val isSeries = document.select("div.episodelist").isNotEmpty()
+
         return if (isSeries) {
             val episodes = document.select("div.episodelist > ul > li").map {
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
@@ -82,6 +99,7 @@ class Anichin : MainAPI() {
                     this.posterUrl = epPoster
                 }
             }
+
             newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
                 this.posterUrl = poster
                 this.plot = description
