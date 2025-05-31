@@ -47,10 +47,6 @@ class Anichin : MainAPI() {
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
         }
-        
-        return newAnimeSearchResponse(title, href, TvType.Anime) {
-            this.posterUrl = posterUrl
-        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -74,12 +70,14 @@ class Anichin : MainAPI() {
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
 
         val episodeElements = document.select("div.episodelist > ul > li")
-        val isSeries = episodeElements.isNotEmpty()
+        val episodeElementsAlt = document.select("div.eplister > ul > li")
+        val episodeList = if (episodeElements.isNotEmpty()) episodeElements else episodeElementsAlt
 
+        val isSeries = episodeList.isNotEmpty()
         val tvType = if (isSeries) TvType.Anime else TvType.Movie
 
         val episodes = if (isSeries) {
-            episodeElements.mapIndexed { index, it ->
+            episodeList.mapIndexed { index, it ->
                 val epHref = it.selectFirst("a")?.attr("href").orEmpty()
                 val epName = it.select("a span")?.text()?.substringAfter("-")?.substringBeforeLast("-")?.trim()
                 val epPoster = it.selectFirst("a img")?.attr("src").orEmpty()
