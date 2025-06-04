@@ -1,0 +1,46 @@
+[
+    {
+        "iconUrl": "https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://anichin.club&size=%size%",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/mozzaru/cloudstream-extensions-phisher",
+        "fileSize": 27912,
+        "status": 1,
+        "language": "id",
+        "authors": [
+            "mozzaru",
+            "kraptor123"
+        ],
+        "tvTypes": [
+            "AnimeMovie",
+            "Anime",
+            "Cartoon"
+        ],
+        "version": 48,
+        "internalName": "Anichin",
+        "description": "Anime and Movies",
+        "url": "https://raw.githubusercontent.com/mozzaru/cloudstream-extensions-phisher/builds/Anichin.cs3",
+        "name": "Anichin"
+    },
+    {
+        "iconUrl": "https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://donghub.vip&size=%size%",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/mozzaru/cloudstream-extensions-phisher",
+        "fileSize": 16341,
+        "status": 1,
+        "language": "id",
+        "authors": [
+            "mozzaru",
+            "kraptor"
+        ],
+        "tvTypes": [
+            "AnimeMovie",
+            "Anime",
+            "Cartoon"
+        ],
+        "version": 5,
+        "internalName": "Donghub",
+        "description": "Anime and Movies",
+        "url": "https://raw.githubusercontent.com/mozzaru/cloudstream-extensions-phisher/builds/Donghub.cs3",
+        "name": "Donghub"
+    }
+]
