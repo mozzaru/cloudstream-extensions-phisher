@@ -1,0 +1,8 @@
+{
+    "name": "mozzaru Repo",
+    "description": "mozzaru Repository",
+    "manifestVersion": 2,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/mozzaru/cloudstream-extensions-phisher/refs/heads/builds/plugins.json"
+    ]
+  }
