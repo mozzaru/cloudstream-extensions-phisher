@@ -22,15 +22,25 @@ class Anichin : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("$mainUrl/${request.data}&page=$page").document
-        val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+        val allItems = mutableListOf<SearchResponse>()
+        val maxPages = if (request.name in listOf("Semua Rilisan Terbaru", "Completed")) 3 else 1
+        var hasNext = false
 
-        val hasNext = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()?.let { it > page } ?: false
+        for (i in 1..maxPages) {
+            val document = app.get("$mainUrl/${request.data}&page=$i").document
+            val items = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+            allItems.addAll(items)
+
+            val lastPage = document.select("a.page-numbers").lastOrNull()?.text()?.toIntOrNull()
+            if (lastPage != null && i < lastPage) {
+                hasNext = true
+            }
+        }
 
         return newHomePageResponse(
             list = HomePageList(
                 name = request.name,
-                list = home,
+                list = allItems,
                 isHorizontalImages = false
             ),
             hasNext = hasNext
