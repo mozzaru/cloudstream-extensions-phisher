@@ -52,12 +52,12 @@ class Anichin : MainAPI() {
         val rawTitle = aTag.attr("title").ifBlank { aTag.text() }
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("src") ?: img?.attr("data-src"))
+        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
     
         val type = if (href.contains("/movie/")) TvType.Movie else TvType.Anime
     
         // Ambil status dari label di atas thumbnail
-        val statusLabel = this.select("div.bt > span").text().lowercase()
+        val statusLabel = this.selectFirst("div.bt span")?.text()?.lowercase().orEmpty()
     
         // Tambahkan label ke judul jika status complete
         val titleWithStatus = if ("complete" in statusLabel) {
