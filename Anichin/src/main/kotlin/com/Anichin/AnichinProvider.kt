@@ -2,15 +2,20 @@ package com.Anichin
 
 import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.Anichin.extractors.*
+import com.Anichin.extractors.Okru
+import com.Anichin.extractors.Rumble
+import com.Anichin.extractors.StreamRuby
+import com.Anichin.extractors.VidGuard
 import com.lagradost.cloudstream3.extractors.Dailymotion
-import com.lagradost.cloudstream3.extractors.Okrulink
+//import com.lagradost.cloudstream3.extractors.Okrulink
 
 @CloudstreamPlugin
 class AnichinProvider: BasePlugin() {
     override fun load() {
         registerMainAPI(Anichin())
         registerExtractorAPI(Dailymotion())
-        registerExtractorAPI(Okrulink())
+        registerExtractorAPI(Okru())
         registerExtractorAPI(Rumble())
         registerExtractorAPI(StreamRuby())
         registerExtractorAPI(VidGuard())

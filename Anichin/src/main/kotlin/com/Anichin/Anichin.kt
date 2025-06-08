@@ -53,19 +53,16 @@ class Anichin : MainAPI() {
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
-    
+
         val type = if (href.contains("/movie/")) TvType.Movie else TvType.Anime
-    
-        // Ambil status dari label di atas thumbnail
         val statusLabel = this.selectFirst("div.bt span")?.text()?.lowercase().orEmpty()
-    
-        // Tambahkan label ke judul jika status complete
+
         val titleWithStatus = if ("complete" in statusLabel) {
             "$rawTitle (Completed)"
         } else {
             rawTitle
         }
-    
+
         return newMovieSearchResponse(titleWithStatus, href, type) {
             this.posterUrl = posterUrl
         }
@@ -131,7 +128,6 @@ class Anichin : MainAPI() {
         return newTvSeriesLoadResponse(title, url, tvType, episodes) {
             this.posterUrl = poster
             this.plot = description
-            // this.status = ShowStatus.Unknown // ❌ Dihapus
         }
     }
 
@@ -155,8 +151,6 @@ class Anichin : MainAPI() {
                 val fixedUrl = embedUrl
                     .replace("/embed-", "/e/")
                     .replace(".html", "")
-
-                println("✅ Panggil extractor: $fixedUrl")
 
                 loadExtractor(fixedUrl, data, subtitleCallback, callback)
             }
