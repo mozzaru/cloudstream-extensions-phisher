@@ -52,7 +52,17 @@ class Anichin : MainAPI() {
         val rawTitle = aTag.attr("title").ifBlank { aTag.text() }
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
+
+        // PosterUrl fix agar thumbnail muncul
+        val posterUrl = fixUrlNull(
+            img?.run {
+                attr("data-src").ifBlank {
+                    attr("src")
+                }.ifBlank {
+                    attr("data-lazy-src")
+                }
+            }
+        )
 
         val type = if (href.contains("/movie/")) TvType.Movie else TvType.Anime
         val statusLabel = this.selectFirst("div.bt span")?.text()?.lowercase().orEmpty()
