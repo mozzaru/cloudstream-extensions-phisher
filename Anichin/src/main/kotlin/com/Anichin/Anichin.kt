@@ -53,16 +53,23 @@ class Anichin : MainAPI() {
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
 
-        // PosterUrl fix agar thumbnail muncul
-        val posterUrl = fixUrlNull(
-            img?.run {
-                attr("data-src").ifBlank {
-                    attr("src")
-                }.ifBlank {
-                    attr("data-lazy-src")
-                }
+        // Ambil posterUrl raw
+        val posterUrlRaw = img?.run {
+            attr("data-src").ifBlank {
+                attr("src")
+            }.ifBlank {
+                attr("data-lazy-src")
             }
-        )
+        }.orEmpty()
+
+        // Pastikan URL absolut (https://...)
+        val posterUrlFixed = if (posterUrlRaw.startsWith("//")) {
+            "https:$posterUrlRaw"
+        } else {
+            posterUrlRaw
+        }
+
+        val posterUrl = fixUrlNull(posterUrlFixed)
 
         val type = if (href.contains("/movie/")) TvType.Movie else TvType.Anime
         val statusLabel = this.selectFirst("div.bt span")?.text()?.lowercase().orEmpty()
