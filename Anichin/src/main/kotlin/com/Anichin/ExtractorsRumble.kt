@@ -19,55 +19,33 @@ class Rumble : ExtractorApi() {
     override var mainUrl = "https://rumble.com"
     override val requiresReferer = false
 
-    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        val response = app.get(url, referer = referer ?: "$mainUrl/")
-        val results = mutableListOf<ExtractorLink>()
-        val seenQualities = mutableSetOf<String>()
-
-        val playerScript = response.document
-            .selectFirst("script:containsData(mp4)")
-            ?.data()
-            ?.substringAfter("{\"mp4")
-            ?.substringBefore("\"evt\":{")
-            ?: return null
-
+    override suspend fun getUrl(
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val response = app.get(
+            url, referer = referer ?: "$mainUrl/"
+        )
+        val playerScript =
+            response.document.selectFirst("script:containsData(mp4)")?.data()
+                ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?:""
         val regex = """"url":"(.*?)"|h":(.*?)\}""".toRegex()
         val matches = regex.findAll(playerScript)
-
         for (match in matches) {
-            val rawHref = match.groupValues[1].ifBlank { match.groupValues[2] }
-            val href = rawHref.replace("\\/", "/").trim()
-
-            val qualityStr = when {
-                href.contains("1080") -> "1080p"
-                href.contains("720") -> "720p"
-                href.contains("480") -> "480p"
-                else -> continue
-            }
-
-            if (qualityStr in seenQualities) continue
-            seenQualities.add(qualityStr)
-
-            val qualityInt = when (qualityStr) {
-                "1080p" -> Qualities.P1080.value
-                "720p" -> Qualities.P720.value
-                "480p" -> Qualities.P480.value
-                else -> Qualities.Unknown.value
-            }
-
-            results.add(
+            val href = match.groupValues[1].replace("\\/", "/")
+            callback.invoke(
                 newExtractorLink(
-                    "$name $qualityStr", // e.g., "Rumble 1080p"
                     name,
-                    href,
-                    ExtractorLinkType.M3U8
+                    name,
+                    url = href,
+                    INFER_TYPE
                 ) {
-                    this.referer = referer ?: ""
-                    this.quality = qualityInt
+                    this.referer = ""
+                    this.quality = getQualityFromName("")
                 }
             )
         }
-
-        return results
     }
 }
