@@ -38,20 +38,25 @@ class Rumble : ExtractorApi() {
 
         for (match in matches) {
             val href = match.groupValues[1].replace("\\/", "/")
-            val quality = Regex("(\\d{3,4})").find(href)?.value + "p"
+            val qualityValue = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
 
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = href,
-                    type = INFER_TYPE
-                ) {
-                    this.referer = "$mainUrl/"
-                    this.quality = getQualityFromName(quality)
-                    this.headers = headers
-                }
-            )
+            // ✅ Hanya tampilkan kualitas yang wajar (contoh: 240p, 360p, 480p, 720p, 1080p)
+            if (qualityValue != null && qualityValue in listOf(240, 360, 480, 720, 1080)) {
+                val quality = "${qualityValue}p"
+
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = quality, // Tampilkan kualitas saja tanpa 'Rumble'
+                        url = href,
+                        type = INFER_TYPE
+                    ) {
+                        this.referer = "$mainUrl/"
+                        this.quality = getQualityFromName(quality)
+                        this.headers = headers
+                    }
+                )
+            }
         }
     }
 }
