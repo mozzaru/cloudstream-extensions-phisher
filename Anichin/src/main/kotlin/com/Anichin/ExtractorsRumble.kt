@@ -38,7 +38,7 @@ class Rumble : ExtractorApi() {
 
         for (match in matches) {
             val href = match.groupValues[1].replace("\\/", "/")
-            val quality = "720p" // Default quality; or extract it based on context if available
+            val quality = Regex("(\\d{3,4})").find(href)?.value + "p"
 
             callback.invoke(
                 newExtractorLink(
