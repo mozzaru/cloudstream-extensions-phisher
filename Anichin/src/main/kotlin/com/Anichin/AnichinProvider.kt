@@ -4,7 +4,7 @@ import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.extractors.Dailymotion
 import com.Anichin.extractors.*
-//import com.Anichin.extractors.OkruExtractor
+import com.Anichin.extractors.OkruExtractor
 import com.Anichin.extractors.Rumble
 import com.Anichin.extractors.StreamRuby
 import com.Anichin.extractors.VidGuard
@@ -21,7 +21,7 @@ class AnichinProvider : BasePlugin() {
     override fun load() {
         registerMainAPI(Anichin())
         registerExtractorAPI(Dailymotion())
-        //registerExtractorAPI(OkruExtractor())
+        registerExtractorAPI(OkruExtractor())
         registerExtractorAPI(Rumble())
         registerExtractorAPI(VidGuard())
         registerExtractorAPI(StreamRuby())

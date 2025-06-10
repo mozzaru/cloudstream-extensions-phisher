@@ -153,28 +153,27 @@ class Anichin : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-
+    
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
             if (base64.isBlank()) return@forEach
-
+    
             try {
                 val decoded = base64Decode(base64)
                 val iframe = Jsoup.parse(decoded).selectFirst("iframe")
                 val iframeSrc = iframe?.attr("src")?.ifBlank { iframe.attr("data-src") }?.trim()
-                if (iframeSrc.isNullOrBlank()) return@forEach
-
-                val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
-                println("➡️ [Anichin] Extracting: $finalUrl")
-
-                // Gunakan extractor otomatis
-                loadExtractor(finalUrl, data, subtitleCallback, callback)
-
+                if (!iframeSrc.isNullOrBlank()) {
+                    val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
+                    println("🎯 [Anichin] Trying to extract: $finalUrl")
+    
+                    // Gunakan extractor otomatis (jika sudah registerExtractorAPI)
+                    loadExtractor(finalUrl, data, subtitleCallback, callback)
+                }
             } catch (e: Exception) {
-                println("❌ [Anichin] Error decoding or parsing: ${e.message}")
+                println("❌ [Anichin] Error decoding Base64 or extracting: ${e.message}")
             }
         }
-
+    
         return true
     }
 }
