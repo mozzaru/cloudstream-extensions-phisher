@@ -1,81 +1,87 @@
-package com.Anichin.extractors
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.ExtractorApi
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.JsUnpacker
-import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.utils.M3u8Helper
-import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
+package com.Anichin
+
+import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.ErrorLoadingException
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.USER_AGENT
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.AppUtils
+import com.lagradost.cloudstream3.utils.ExtractorApi
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.getQualityFromName
-import kotlin.text.Regex
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Document
-import org.jsoup.parser.Parser
-import java.util.Base64
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
-class OkruExtractor : ExtractorApi() {
-    override val name = "Okru"
-    override val mainUrl = "https://ok.ru"
-    override val requiresReferer: Boolean = true
 
-    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink> {
-        val links = mutableListOf<ExtractorLink>()
-        val document = app.get(url, referer = referer).document
-    
-        val dataOptionsRaw = document.selectFirst("div[data-module=OKVideo]")?.attr("data-options")
-            ?: document.select("script").find { it.data().contains("data-options") }
-                ?.data()?.substringAfter("data-options=\"")?.substringBefore("\"")
-            ?: return emptyList()
-    
-        val dataOptions = Parser.unescapeEntities(dataOptionsRaw, true)
-    
-        val flashvarsRegex = "\"flashvars\":(\\{.*?\\})".toRegex()
-        val flashvarsMatch = flashvarsRegex.find(dataOptions) ?: return emptyList()
-    
-        val flashvarsJson = flashvarsMatch.groupValues[1]
-        val flashvarsMap = parseJson<LinkedHashMap<String, Any>>(flashvarsJson)
-        val metadataUrl = flashvarsMap["metadata"]?.toString() ?: return emptyList()
-    
-        val metadataDocument = app.get(metadataUrl, referer = referer).parsedSafe<LinkedHashMap<String, Any>>() ?: return emptyList()
-        val videos = metadataDocument["videos"] as? List<LinkedHashMap<String, Any>> ?: return emptyList()
-    
-        videos.forEach { video ->
-            val videoUrl = video["url"]?.toString() ?: return@forEach
-            val qualityName = video["name"]?.toString()?.lowercase() ?: "default"
-    
-            val quality = when (qualityName) {
-                "mobile" -> 144
-                "lowest" -> 240
-                "low" -> 360
-                "sd" -> 480
-                "hd" -> 720
-                "full" -> 1080
-                "quad" -> 2000
-                "ultra" -> 4000
-                else -> Qualities.Unknown.value
+class OkRuSSL : Odnoklassniki() {
+    override var name    = "OkRuSSL"
+    override var mainUrl = "https://ok.ru"
+}
+
+class OkRuHTTP : Odnoklassniki() {
+    override var name    = "OkRuHTTP"
+    override var mainUrl = "http://ok.ru"
+}
+
+open class Odnoklassniki : ExtractorApi() {
+    override val name            = "Odnoklassniki"
+    override val mainUrl         = "https://odnoklassniki.ru"
+    override val requiresReferer = false
+
+    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
+        val headers = mapOf(
+            "Accept" to "*/*",
+            "Connection" to "keep-alive",
+            "Sec-Fetch-Dest" to "empty",
+            "Sec-Fetch-Mode" to "cors",
+            "Sec-Fetch-Site" to "cross-site",
+            "Origin" to mainUrl,
+            "User-Agent" to USER_AGENT,
+        )
+        val embedUrl = url.replace("/video/","/videoembed/")
+        val videoReq  = app.get(embedUrl, headers=headers).text.replace("\\&quot;", "\"").replace("\\\\", "\\")
+            .replace(Regex("\\\\u([0-9A-Fa-f]{4})")) { matchResult ->
+                Integer.parseInt(matchResult.groupValues[1], 16).toChar().toString()
             }
-    
-            links.add(
-                newExtractorLink {
-                    this.name = "Okru"
-                    this.source = "Okru"
-                    this.url = videoUrl
-                    this.referer = referer ?: ""
-                    this.quality = quality
-                    this.isM3u8 = false
+
+        val videosStr = Regex(""""videos":(\[[^]]*])""").find(videoReq)?.groupValues?.get(1) ?: throw ErrorLoadingException("Video not found")
+        val videos    = AppUtils.tryParseJson<List<OkRuVideo>>(videosStr) ?: throw ErrorLoadingException("Video not found")
+
+        for (video in videos) {
+
+            val videoUrl  = if (video.url.startsWith("//")) "https:${video.url}" else video.url
+
+            val quality   = video.name.uppercase()
+                .replace("MOBILE", "144p")
+                .replace("LOWEST", "240p")
+                .replace("LOW",    "360p")
+                .replace("SD",     "480p")
+                .replace("HD",     "720p")
+                .replace("FULL",   "1080p")
+                .replace("QUAD",   "1440p")
+                .replace("ULTRA",  "4k")
+
+            callback.invoke(
+                newExtractorLink(
+                    source  = this.name,
+                    name    = this.name,
+                    url     = videoUrl,
+                    type    = INFER_TYPE
+                ) {
+                    this.referer = "$mainUrl/"
+                    this.quality = getQualityFromName(quality)
+                    this.headers = headers
                 }
             )
         }
-    
-        return links
     }
+
+    data class OkRuVideo(
+        @JsonProperty("name") val name: String,
+        @JsonProperty("url")  val url: String,
+    )
 }

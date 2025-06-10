@@ -1,27 +1,16 @@
 package com.Anichin
 
-import com.lagradost.cloudstream3.plugins.BasePlugin
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
-import com.lagradost.cloudstream3.extractors.Dailymotion
-import com.Anichin.extractors.*
-import com.Anichin.extractors.OkruExtractor
-import com.Anichin.extractors.Rumble
-import com.Anichin.extractors.StreamRuby
-import com.Anichin.extractors.VidGuard
-import com.Anichin.extractors.svilla
-import com.Anichin.extractors.svanila
-//import com.lagradost.cloudstream3.extractors.Odnoklassniki
-//import com.lagradost.cloudstream3.extractors.OkRuHTTP
-//import com.lagradost.cloudstream3.extractors.OkRuSSL
-//import com.lagradost.cloudstream3.extractors.Okrulink
-
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class AnichinProvider : BasePlugin() {
-    override fun load() {
+class AnichinProvider: Plugin() {
+    override fun load(context: Context) {
         registerMainAPI(Anichin())
-        registerExtractorAPI(Dailymotion())
-        registerExtractorAPI(OkruExtractor())
+        registerExtractorAPI(Odnoklassniki())
+        registerExtractorAPI(OkRuSSL())
+        registerExtractorAPI(OkRuHTTP())
         registerExtractorAPI(Rumble())
         registerExtractorAPI(VidGuard())
         registerExtractorAPI(StreamRuby())
