@@ -26,32 +26,35 @@ class Rumble : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val response = app.get(url, referer = referer ?: "$mainUrl/")
-        val scripts = response.document.select("script").mapNotNull { it.data() }
 
-        val regex = Regex("\"url\":\"(https[^\"]+\\.mp4)\"")
+        val playerScript = response.document
+            .selectFirst("script:containsData(mp4)")?.data()
+            ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?: return
 
-        for (script in scripts) {
-            val matches = regex.findAll(script)
+        val regex = """"url":"(.*?)"|h":(.*?)\}""".toRegex()
+        val matches = regex.findAll(playerScript)
 
-            for (match in matches) {
-                val href = match.groupValues[1].replace("\\/", "/")
+        for (match in matches) {
+            val href = match.groupValues[1].replace("\\/", "/")
 
-                val qualityInt = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
-                if (qualityInt != null && qualityInt in listOf(240, 360, 480, 720, 1080)) {
-                    val qualityStr = "${qualityInt}p"
+            // Ambil angka kualitas dari link, contoh: 720 dari ...720.mp4
+            val qualityInt = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
 
-                    callback.invoke(
-                        newExtractorLink(
-                            source = name,
-                            name = qualityStr,
-                            url = href,
-                            type = INFER_TYPE
-                        ) {
-                            this.referer = "$mainUrl/"
-                            this.quality = getQualityFromName(qualityStr)
-                        }
-                    )
-                }
+            // Filter kualitas valid
+            if (href.startsWith("http") && qualityInt != null && qualityInt in listOf(240, 360, 480, 720, 1080)) {
+                val qualityStr = "${qualityInt}p"
+
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = "$name - $qualityStr", // Tampil: Rumble - 720p
+                        url = href,
+                        type = INFER_TYPE
+                    ) {
+                        this.referer = "$mainUrl/"
+                        this.quality = getQualityFromName(qualityStr)
+                    }
+                )
             }
         }
     }
