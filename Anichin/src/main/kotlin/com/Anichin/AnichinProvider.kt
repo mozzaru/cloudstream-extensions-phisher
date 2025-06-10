@@ -12,7 +12,6 @@ class AnichinProvider: Plugin() {
         registerExtractorAPI(OkRuSSL())
         registerExtractorAPI(OkRuHTTP())
         registerExtractorAPI(Rumble())
-        registerExtractorAPI(VidGuard())
         registerExtractorAPI(StreamRuby())
         registerExtractorAPI(svilla())
         registerExtractorAPI(svanila())
