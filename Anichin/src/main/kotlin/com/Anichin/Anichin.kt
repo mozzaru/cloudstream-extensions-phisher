@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import com.Anichin.extractors.OkruExtractor
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.club"
@@ -153,11 +154,12 @@ class Anichin : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-    
+
+        // Handle server list base64 first
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
             if (base64.isBlank()) return@forEach
-    
+
             try {
                 val decoded = base64Decode(base64)
                 val iframe = Jsoup.parse(decoded).selectFirst("iframe")
@@ -165,15 +167,60 @@ class Anichin : MainAPI() {
                 if (!iframeSrc.isNullOrBlank()) {
                     val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
                     println("🎯 [Anichin] Trying to extract: $finalUrl")
-    
-                    // Gunakan extractor otomatis (jika sudah registerExtractorAPI)
-                    loadExtractor(finalUrl, data, subtitleCallback, callback)
+
+                    if (finalUrl.contains("ok.ru")) {
+                        extractOkruIframe(finalUrl, data, callback)
+                    } else {
+                        loadExtractor(finalUrl, data, subtitleCallback, callback)
+                    }
                 }
             } catch (e: Exception) {
                 println("❌ [Anichin] Error decoding Base64 or extracting: ${e.message}")
             }
         }
-    
+
+        // Check direct iframe (for some releases)
+        extractOkruIframe(document, data, callback)
+
         return true
+    }
+
+    private suspend fun extractOkruIframe(
+        document: org.jsoup.nodes.Document,
+        referer: String?,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val iframe = document.selectFirst("iframe[src*=ok.ru], iframe[data-src*=ok.ru]") ?: return
+        val iframeSrc = iframe.attr("src").ifBlank { iframe.attr("data-src") }.ifBlank { return }
+
+        val realUrl = if (iframeSrc.startsWith("data:text/plain;base64,")) {
+            val base64Part = iframeSrc.removePrefix("data:text/plain;base64,")
+            String(android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT))
+        } else {
+            iframeSrc
+        }
+
+        val okruUrl = realUrl.substringBefore("&")
+
+        println("🎬 [Anichin] Extracting OK.ru iframe: $okruUrl")
+
+        val videos = OkruExtractor().getUrl(okruUrl, referer)
+
+        videos.forEach { video ->
+            callback.invoke(video)
+        }
+    }
+
+    private suspend fun extractOkruIframe(
+        url: String,
+        referer: String?,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        try {
+            val document = app.get(url).document
+            extractOkruIframe(document, referer, callback)
+        } catch (e: Exception) {
+            println("❌ [Anichin] Error extracting OK.ru iframe page: ${e.message}")
+        }
     }
 }
