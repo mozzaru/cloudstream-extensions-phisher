@@ -25,45 +25,36 @@ open class StreamRuby : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val id = Regex("/(?:e|embed)/([a-zA-Z0-9]+)").find(url)?.groupValues?.getOrNull(1) ?: return
-
+        val id = "/e/(\\w+)".toRegex().find(url)?.groupValues?.get(1) ?: return
         val response = app.post(
-            "$mainUrl/dl",
-            data = mapOf(
+            "$mainUrl/dl", data = mapOf(
                 "op" to "embed",
                 "file_code" to id,
                 "auto" to "1",
-                "referer" to ""
-            ),
-            referer = referer,
-            headers = mapOf("User-Agent" to USER_AGENT)
+                "referer" to "",
+            ), referer = referer
         )
 
-        val unpackedScript = getAndUnpack(response.text).takeIf { !it.isNullOrBlank() }
-        val rawScript = unpackedScript ?: response.document.selectFirst("script:containsData(sources:)")?.data()
+        val script = getAndUnpack(response.text) ?: Jsoup.parse(response.text)
+            .selectFirst("script:containsData(sources:)")?.data()
 
-        val m3u8Url = Regex("file\\s*:\\s*\"(.*?\\.m3u8.*?)\"").find(rawScript ?: return)
-            ?.groupValues?.getOrNull(1)?.replace("\\", "") ?: return
+        val m3u8 = Regex("file:\\s*\"(.*?\\.m3u8.*?)\"").find(script ?: return)
+            ?.groupValues?.getOrNull(1)
 
         M3u8Helper.generateM3u8(
-            name = name,
-            url = m3u8Url,
+            source = name,
+            streamUrl = m3u8 ?: return,
             referer = mainUrl
         ).forEach(callback)
-    }
-
-    companion object {
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 }
 
 class StreamRuby1 : StreamRuby() {
     override var mainUrl: String = "https://streamruby.net"
-    override var name = "StreamRuby"
+    override var name = "StreamRuby1"
 }
 
 class StreamRuby2 : StreamRuby() {
     override var mainUrl: String = "https://streamruby.com"
-    override var name = "StreamRuby"
+    override var name = "StreamRuby2"
 }

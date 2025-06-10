@@ -23,12 +23,7 @@ class AnichinProvider : BasePlugin() {
         registerExtractorAPI(OkruExtractor())
         registerExtractorAPI(Rumble())
         registerExtractorAPI(VidGuard())
-    }
-
-    override fun getExtractorList(): List<ExtractorApi> {
-        return listOf(
-            StreamRuby1(),
-            StreamRuby2()
-        )
+        registerExtractorAPI(StreamRuby1())
+        registerExtractorAPI(StreamRuby2())
     }
 }
