@@ -53,7 +53,6 @@ class Anichin : MainAPI() {
         val href = fixUrl(aTag.attr("href"))
         val img = aTag.selectFirst("img")
 
-        // Ambil posterUrl raw
         val posterUrlRaw = img?.run {
             attr("data-src").ifBlank {
                 attr("src")
@@ -62,7 +61,6 @@ class Anichin : MainAPI() {
             }
         }.orEmpty()
 
-        // Pastikan URL absolut (https://...)
         val posterUrlFixed = if (posterUrlRaw.startsWith("//")) {
             "https:$posterUrlRaw"
         } else {
@@ -155,31 +153,28 @@ class Anichin : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-    
+
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
-            println("🔍 [Anichin] Base64 value: $base64")
-    
             if (base64.isBlank()) return@forEach
-    
+
             try {
                 val decoded = base64Decode(base64)
-                println("🔍 [Anichin] Decoded HTML: $decoded")
-    
-                val iframeSrc = Jsoup.parse(decoded).selectFirst("iframe")?.attr("src")?.trim()
-                println("🔍 [Anichin] Found iframe: $iframeSrc")
-    
-                if (!iframeSrc.isNullOrBlank()) {
-                    val embedUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
-                    println("✅ [Anichin] Loading extractor for: $embedUrl")
-    
-                    loadExtractor(embedUrl, data, subtitleCallback, callback)
-                }
+                val iframe = Jsoup.parse(decoded).selectFirst("iframe")
+                val iframeSrc = iframe?.attr("src")?.ifBlank { iframe.attr("data-src") }?.trim()
+                if (iframeSrc.isNullOrBlank()) return@forEach
+
+                val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
+                println("➡️ [Anichin] Extracting: $finalUrl")
+
+                // Gunakan extractor otomatis
+                loadExtractor(finalUrl, data, subtitleCallback, callback)
+
             } catch (e: Exception) {
                 println("❌ [Anichin] Error decoding or parsing: ${e.message}")
             }
         }
-    
+
         return true
     }
 }
