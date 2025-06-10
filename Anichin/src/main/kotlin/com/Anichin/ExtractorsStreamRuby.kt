@@ -14,47 +14,38 @@ import com.lagradost.cloudstream3.utils.*
 import kotlin.text.Regex
 import org.jsoup.Jsoup
 
-open class StreamRuby : ExtractorApi() {
-    override val name = "StreamRuby"
-    override val mainUrl = "https://rubyvidhub.com"
-    override val requiresReferer = true
+open class Streamruby : ExtractorApi() {
+    override var name = "Streamruby"
+    override var mainUrl = "https://streamruby.com"
+    override val requiresReferer = false
 
-    override suspend fun getUrl(
-        url: String,
-        referer: String?,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val id = "/e/(\\w+)".toRegex().find(url)?.groupValues?.get(1) ?: return
-        val response = app.post(
-            "$mainUrl/dl", data = mapOf(
-                "op" to "embed",
-                "file_code" to id,
-                "auto" to "1",
-                "referer" to "",
-            ), referer = referer
-        )
+    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
+        val newUrl = if (url.contains("/e/")) url.replace("/e", "") else url
+        val txt = app.get(newUrl).text
+        val m3u8 = Regex("file:\\s*\"(.*?m3u8.*?)\"").find(txt)?.groupValues?.getOrNull(1)
 
-        val script = getAndUnpack(response.text) ?: Jsoup.parse(response.text)
-            .selectFirst("script:containsData(sources:)")?.data()
-
-        val m3u8 = Regex("file:\\s*\"(.*?\\.m3u8.*?)\"").find(script ?: return)
-            ?.groupValues?.getOrNull(1)
-
-        M3u8Helper.generateM3u8(
-            source = name,
-            streamUrl = m3u8 ?: return,
-            referer = mainUrl
-        ).forEach(callback)
+        return m3u8?.takeIf { it.isNotEmpty() }?.let {
+            listOf(
+                newExtractorLink(
+                    name = this.name,
+                    source = this.name,
+                    url = it,
+                    type = INFER_TYPE
+                ) {
+                    this.referer = mainUrl
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+        }
     }
 }
 
-class StreamRuby1 : StreamRuby() {
+class Streamruby1 : Streamruby() {
     override var mainUrl: String = "https://streamruby.net"
-    override var name = "StreamRuby1"
+    override var name = "Streamruby1"
 }
 
-class StreamRuby2 : StreamRuby() {
-    override var mainUrl: String = "https://streamruby.com"
-    override var name = "StreamRuby2"
+class Streamruby2 : Streamruby() {
+    override var mainUrl: String = "https://rubyvidhub.com"
+    override var name = "Streamruby2"
 }

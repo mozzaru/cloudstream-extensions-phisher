@@ -1,39 +1,41 @@
 package com.Anichin.extractors
 
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.ExtractorApi
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-//import com.lagradost.cloudstream3.utils.JsUnpacker
-import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.SubtitleFile
-//import com.lagradost.cloudstream3.utils.M3u8Helper
-//import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
+import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.ErrorLoadingException
-import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.cloudstream3.utils.JsUnpacker
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
+import com.lagradost.cloudstream3.SubtitleFile
 import kotlin.text.Regex
 import org.jsoup.Jsoup
 
-private const val USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-
-data class OkruMetadata(
-    @JsonProperty("videos") val videos: List<OkruVideo>?
-)
-
-data class OkruVideo(
-    @JsonProperty("name") val name: String?,
-    @JsonProperty("url") val url: String?
-)
-
-open class OkruExtractor : ExtractorApi() {
+class OkruExtractor : ExtractorApi() {
     override val name = "Okru"
     override val mainUrl = "https://ok.ru"
-    override val requiresReferer = true
+    override val requiresReferer = false
+
+    private fun fixQuality(quality: String): Int {
+        return when (quality.lowercase()) {
+            "ultra" -> 2160
+            "quad" -> 1440
+            "full" -> 1080
+            "hd" -> 720
+            "sd" -> 480
+            "low" -> 360
+            "lowest" -> 240
+            "mobile" -> 144
+            else -> Qualities.Unknown.value
+        }
+    }
 
     override suspend fun getUrl(
         url: String,
@@ -41,69 +43,42 @@ open class OkruExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val videoId = when {
-            url.contains("okru.link") -> Regex("[?&]t=(\\d+)").find(url)?.groupValues?.getOrNull(1)
-            url.contains("/videoembed/") -> Regex("/videoembed/(\\d+)").find(url)?.groupValues?.getOrNull(1)
-            url.contains("/video/") -> Regex("/video/(\\d+)").find(url)?.groupValues?.getOrNull(1)
-            else -> null
-        } ?: return
+        val response = app.get(url)
+        val doc = Jsoup.parse(response.body.string())
+        val dataOptions = doc.selectFirst("div[data-options]")?.attr("data-options") ?: return
 
-        val okruUrl = "https://ok.ru/video/$videoId"
-        val response = app.get(okruUrl, headers = mapOf("User-Agent" to USER_AGENT))
-        val document = Jsoup.parse(response.text)
-
-        val dataOptions = document.selectFirst("div[data-module='OKVideo']")?.attr("data-options")
-
-        if (dataOptions != null && dataOptions.contains("\"metadata\":")) {
-            val jsonStart = dataOptions.indexOf("\"metadata\":")
-            val jsonEnd = dataOptions.indexOf(",\"jsData\"")
-            if (jsonStart != -1 && jsonEnd != -1) {
-                val metadataJson = dataOptions.substring(jsonStart + 11, jsonEnd)
-                val parsed: OkruMetadata = jacksonObjectMapper().readValue(metadataJson)
-
-                parsed.videos?.forEach { video ->
-                    val link = video.url ?: return@forEach
-                    val quality = when {
-                        video.name?.contains("1080") == true -> 1080
-                        video.name?.contains("720") == true -> 720
-                        video.name?.contains("480") == true -> 480
-                        video.name?.contains("360") == true -> 360
-                        else -> 0
-                    }
-
-                    callback.invoke(
-                        ExtractorLink(
-                            source = name,
-                            name = name,
-                            url = link,
-                            referer = okruUrl,
-                            quality = quality,
-                            type = if (link.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-                            headers = mapOf("User-Agent" to USER_AGENT)
-                        )
-                    )
-                }
-                return
-            }
+        // 1. Try to parse as m3u8 or dash
+        val hlsUrl = dataOptions.substringAfter("ondemandHls\":\"", "")
+            .substringBefore("\"")
+            .replace("\\u0026", "&")
+        if (hlsUrl.isNotBlank()) {
+            M3u8Helper.generateM3u8(name, hlsUrl, url).forEach(callback)
+            return
         }
 
-        // fallback to m3u8 regex
-        val fallbackUrls = Regex("\"url\":\"(https:[^\"]+?\\.m3u8)\"").findAll(response.text)
-            .mapNotNull { it.groupValues.getOrNull(1)?.replace("\\/", "/") }
-            .toList()
+        // 2. Fallback to direct mp4 list
+        val videoListRaw = dataOptions.substringAfter("\"videos\":[{\"name\":\"", "")
+            .substringBefore("]")
 
-        fallbackUrls.forEach {
-            callback.invoke(
-                ExtractorLink(
-                    source = name,
-                    name = name,
-                    url = it,
-                    referer = okruUrl,
-                    quality = 0,
-                    type = ExtractorLinkType.M3U8,
-                    headers = mapOf("User-Agent" to USER_AGENT)
+        videoListRaw.split("{\"name\":\"").reversed().forEach {
+            val videoUrl = it.substringAfter("url\":\"").substringBefore("\"").replace("\\u0026", "&")
+            val qualityStr = it.substringBefore("\"")
+            val quality = fixQuality(qualityStr)
+
+            if (videoUrl.startsWith("https://")) {
+                callback(
+                    newExtractorLink(
+                        source = name,
+                        name = "$name - $quality",
+                        url = videoUrl,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = url
+                        this.quality = quality
+                        this.headers = mapOf("Referer" to url)
+                    }
                 )
-            )
+            }
         }
     }
 }
