@@ -15,5 +15,10 @@ class AnichinProvider: Plugin() {
         registerExtractorAPI(StreamRuby())
         registerExtractorAPI(svilla())
         registerExtractorAPI(svanila())
+        registerExtractorAPI(Vidguardto())
+        registerExtractorAPI(Vidguardto1())
+        registerExtractorAPI(Vidguardto2())
+        registerExtractorAPI(Vidguardto3())
+
     }
 }
