@@ -34,12 +34,16 @@ class Rumble : ExtractorApi() {
         val regex = """"url":"(https[^"]+)"""".toRegex()
         val matches = regex.findAll(playerScript)
 
+        var foundValidLink = false
+
         for (match in matches) {
             val href = match.groupValues[1].replace("\\/", "/")
 
             val qualityValue = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
 
             if (qualityValue != null && qualityValue in listOf(240, 360, 480, 720, 1080)) {
+                foundValidLink = true
+
                 val quality = "${qualityValue}p"
 
                 callback.invoke(
@@ -55,6 +59,11 @@ class Rumble : ExtractorApi() {
                     }
                 )
             }
+        }
+
+        // ❗️Optional: jika tidak ditemukan link valid, bisa log atau diam
+        if (!foundValidLink) {
+            println("Rumble: No valid video links found.")
         }
     }
 }
