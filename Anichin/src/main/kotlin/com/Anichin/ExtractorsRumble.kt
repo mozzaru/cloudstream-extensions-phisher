@@ -26,44 +26,33 @@ class Rumble : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val response = app.get(url, referer = referer ?: "$mainUrl/")
+        val scripts = response.document.select("script").mapNotNull { it.data() }
 
-        val playerScript = response.document
-            .selectFirst("script:containsData(mp4)")?.data()
-            ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?: return
+        val regex = Regex("\"url\":\"(https[^\"]+\\.mp4)\"")
 
-        val regex = """"url":"(https[^"]+)"""".toRegex()
-        val matches = regex.findAll(playerScript)
+        for (script in scripts) {
+            val matches = regex.findAll(script)
 
-        var foundValidLink = false
+            for (match in matches) {
+                val href = match.groupValues[1].replace("\\/", "/")
 
-        for (match in matches) {
-            val href = match.groupValues[1].replace("\\/", "/")
+                val qualityInt = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
+                if (qualityInt != null && qualityInt in listOf(240, 360, 480, 720, 1080)) {
+                    val qualityStr = "${qualityInt}p"
 
-            val qualityValue = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
-
-            if (qualityValue != null && qualityValue in listOf(240, 360, 480, 720, 1080)) {
-                foundValidLink = true
-
-                val quality = "${qualityValue}p"
-
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = quality,
-                        url = href,
-                        type = INFER_TYPE
-                    ) {
-                        this.referer = "$mainUrl/"
-                        this.quality = getQualityFromName(quality)
-                        this.headers = headers
-                    }
-                )
+                    callback.invoke(
+                        newExtractorLink(
+                            source = name,
+                            name = qualityStr,
+                            url = href,
+                            type = INFER_TYPE
+                        ) {
+                            this.referer = "$mainUrl/"
+                            this.quality = getQualityFromName(qualityStr)
+                        }
+                    )
+                }
             }
-        }
-
-        // ❗️Optional: jika tidak ditemukan link valid, bisa log atau diam
-        if (!foundValidLink) {
-            println("Rumble: No valid video links found.")
         }
     }
 }
