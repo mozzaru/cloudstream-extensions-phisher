@@ -1,6 +1,7 @@
 package com.Anichin
 
-import com.lagradost.cloudstream3.app 
+import android.util.Log
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi 
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
@@ -19,7 +20,9 @@ open class StreamRuby : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val id = "/e/(\\w+)".toRegex().find(url)?.groupValues?.get(1) ?: return
+//        Log.d("streamrubby", "url = $url")
+        val id = "embed-([a-zA-Z0-9]+)\\.html".toRegex().find(url)?.groupValues?.get(1) ?: return
+//        Log.d("streamrubby", "id = $id")
         val response = app.post(
             "$mainUrl/dl", data = mapOf(
                 "op" to "embed",
@@ -34,11 +37,17 @@ open class StreamRuby : ExtractorApi() {
             response.document.selectFirst("script:containsData(sources:)")?.data()
         }
         val m3u8 = Regex("file:\\s*\"(.*?m3u8.*?)\"").find(script ?: return)?.groupValues?.getOrNull(1)
-        M3u8Helper.generateM3u8(
-            name,
-            m3u8 ?: return,
-            mainUrl
-        ).forEach(callback)
+//        Log.d("streamrubby", "m3u8 = $m3u8")
+        callback.invoke(newExtractorLink(
+            source = this.name,
+            name = this.name,
+            url  = m3u8.toString(),
+            type = ExtractorLinkType.M3U8,
+            {
+                quality = Qualities.Unknown.value
+                this.referer = mainUrl
+            }
+        ))
     }
 }
 
