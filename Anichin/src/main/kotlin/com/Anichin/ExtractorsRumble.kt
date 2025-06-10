@@ -26,36 +26,34 @@ class Rumble : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val response = app.get(url, referer = referer ?: "$mainUrl/")
+//        Log.d("rumbleex","url = $url")
 
         val playerScript = response.document
             .selectFirst("script:containsData(mp4)")?.data()
             ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?: return
 
-        val regex = """"url":"(.*?)"|h":(.*?)\}""".toRegex()
+        val regex = """"url":"(.*?)".*?"h":([0-9]+)""".toRegex()
         val matches = regex.findAll(playerScript)
 
         for (match in matches) {
-            val href = match.groupValues[1].replace("\\/", "/")
+            val rawHref = match.groupValues[1]
+            val rawQuality = match.groupValues[2]
+            if (rawHref.isBlank()) continue
 
-            // Ambil angka kualitas dari link, contoh: 720 dari ...720.mp4
-            val qualityInt = Regex("(\\d{3,4})").find(href)?.value?.toIntOrNull()
-
-            // Filter kualitas valid
-            if (href.startsWith("http") && qualityInt != null && qualityInt in listOf(240, 360, 480, 720, 1080)) {
-                val qualityStr = "${qualityInt}p"
-
-                callback.invoke(
-                    newExtractorLink(
-                        source = name,
-                        name = "$name - $qualityStr", // Tampil: Rumble - 720p
-                        url = href,
-                        type = INFER_TYPE
-                    ) {
-                        this.referer = "$mainUrl/"
-                        this.quality = getQualityFromName(qualityStr)
-                    }
-                )
-            }
+            val href = rawHref.replace("\\/", "/")
+//            Log.d("rumbleex", "href = $href")
+//            Log.d("rumbleex", "rawQuality = $rawQuality")
+            callback.invoke(
+                newExtractorLink(
+                    source = this.name,
+                    name = this.name, // Tampil: Rumble - 720p
+                    url = href,
+                    type = INFER_TYPE
+                ) {
+                    this.referer = "$mainUrl/"
+                    this.quality = getQualityFromName(rawQuality)
+                }
+            )
         }
     }
 }
