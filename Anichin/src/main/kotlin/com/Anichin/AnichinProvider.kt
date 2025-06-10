@@ -6,7 +6,8 @@ import com.lagradost.cloudstream3.extractors.Dailymotion
 import com.Anichin.extractors.*
 import com.Anichin.extractors.OkruExtractor
 import com.Anichin.extractors.Rumble
-import com.Anichin.extractors.StreamRuby
+import com.Anichin.extractors.StreamRuby1
+import com.Anichin.extractors.StreamRuby2
 import com.Anichin.extractors.VidGuard
 //import com.lagradost.cloudstream3.extractors.Odnoklassniki
 //import com.lagradost.cloudstream3.extractors.OkRuHTTP
@@ -15,13 +16,19 @@ import com.Anichin.extractors.VidGuard
 
 
 @CloudstreamPlugin
-class AnichinProvider: BasePlugin() {
+class AnichinProvider : BasePlugin() {
     override fun load() {
         registerMainAPI(Anichin())
         registerExtractorAPI(Dailymotion())
         registerExtractorAPI(OkruExtractor())
         registerExtractorAPI(Rumble())
-        registerExtractorAPI(StreamRuby())
         registerExtractorAPI(VidGuard())
+    }
+
+    override fun getExtractorList(): List<ExtractorApi> {
+        return listOf(
+            StreamRuby1(),
+            StreamRuby2()
+        )
     }
 }
