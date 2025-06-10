@@ -1,95 +1,62 @@
-name: Build
+# Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+name: CloudStream Derleyici
 
 concurrency:
-  group: "build"
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
-      - main
     paths-ignore:
-      - '*.md'
+      - "**/*.md"
+      - "**/*.yml"
+      - "**/*.jpg"
+      - "**/*.png"
+      - "**/*.py"
 
 jobs:
-  build:
+  CloudStreamDerleyici:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: "'src' Depo Kontrolü"
         uses: actions/checkout@v4.2.2
         with:
           path: "src"
 
-      - name: Checkout builds
+      - name: "'build' Depo Kontrolü"
         uses: actions/checkout@v4.2.2
         with:
           ref: "builds"
           path: "builds"
 
-      - name: Clean old builds
-        run: |
-          rm -f $GITHUB_WORKSPACE/builds/*.cs3 || true
-          rm -f $GITHUB_WORKSPACE/builds/*.jar || true
+      - name: Eski Derlemeleri Temizle
+        run: rm $GITHUB_WORKSPACE/builds/*.cs3 || true
 
-      - name: Setup JDK 17
+      - name: JDK 23 Ayarla
         uses: actions/setup-java@v4.6.0
         with:
-          distribution: "adopt"
-          java-version: 17
+          distribution: adopt
+          java-version: 23
 
-      - name: Setup Android SDK
+      - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
-      - name: Access Secrets
-        env:
-          # semua secrets Anda tetap di sini...
-          TMDB_API: ${{ secrets.TMDB_API }}
-          DUMP_API: ${{ secrets.DUMP_API }}
-          # ... (secrets lainnya)
-          KAISVA: ${{ secrets.KAISVA }}
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          echo "Menulis secrets ke local.properties..."
-          {
-            echo TMDB_API=$TMDB_API
-            echo DUMP_API=$DUMP_API
-            # tambahkan semua secrets lainnya seperti sebelumnya
-            echo KAISVA=$KAISVA
-          } >> local.properties
-
-      - name: Build Plugins
+      - name: Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
+          ./gradlew make makePluginsJson --stacktrace --info
+          cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
+          cp build/plugins.json $GITHUB_WORKSPACE/builds
 
-          echo "▶️ Menjalankan Gradle build..."
-          ./gradlew make makePluginsJson || { echo "❌ Gradle 'make' gagal"; exit 1; }
-
-          ./gradlew ensureJarCompatibility || { echo "❌ Gradle 'ensureJarCompatibility' gagal"; exit 1; }
-
-          echo "📁 Menampilkan file .jar dan .cs3:"
-          find . -name "*.jar" -o -name "*.cs3" || true
-
-          echo "🔍 Mengaktifkan globstar..."
-          shopt -s globstar nullglob
-
-          echo "📦 Menyalin .cs3 dan .jar ke folder builds..."
-          cp **/build/*.cs3 $GITHUB_WORKSPACE/builds || echo "⚠️ Tidak ada file .cs3 ditemukan"
-          cp **/build/*.jar $GITHUB_WORKSPACE/builds || echo "⚠️ Tidak ada file .jar ditemukan"
-
-          if [ -f build/plugins.json ]; then
-            cp build/plugins.json $GITHUB_WORKSPACE/builds
-          else
-            echo "⚠️ plugins.json tidak ditemukan"
-          fi
-
-      - name: Push builds
+      - name: Derlemeleri Yükle
         run: |
           cd $GITHUB_WORKSPACE/builds
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git add .
-          git commit --amend -m "Build $GITHUB_SHA" || echo "ℹ️ Tidak ada perubahan untuk commit"
+          git commit --amend -m "$GITHUB_SHA 'nın Derlenmesi" || exit 0   # eğer commit edilecek bir şey yoksa hata verme
           git push --force
-          
