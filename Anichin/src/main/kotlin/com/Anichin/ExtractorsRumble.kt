@@ -54,7 +54,11 @@ class Rumble : ExtractorApi() {
         links.sortedByDescending { it.second }.forEach { (linkUrl, quality) ->
             callback.invoke(
                 newExtractorLink(
-                    name = if (linkUrl.contains(".m3u8")) "HLS" else "$quality",
+                    name = when {
+                        linkUrl.contains(".m3u8") -> "HLS"
+                        linkUrl.contains(".Faa.mp4") -> "Auto"
+                        else -> "$quality"
+                    },
                     source = this@Rumble.name,
                     url = linkUrl,
                     type = INFER_TYPE
@@ -76,6 +80,8 @@ class Rumble : ExtractorApi() {
             url.contains("720") -> 720
             url.contains("480") -> 480
             url.contains("360") -> 360
+            url.contains(".Faa.mp4") -> 720       // Default fallback untuk video utama
+            url.contains(".m3u8") -> 720           // Asumsi kualitas jika tidak ditentukan
             else -> null
         }
     }
