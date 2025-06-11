@@ -34,33 +34,41 @@ class Rumble : ExtractorApi() {
         val matches = regex.findAll(scriptData)
 
         val processedUrls = mutableSetOf<String>()
-        val links = mutableListOf<Pair<String, Int>>()
 
         for (match in matches) {
             val rawUrl = match.groupValues[1]
             if (rawUrl.isBlank()) continue
 
             val cleanedUrl = rawUrl.replace("\\/", "/")
-
             if (!isValidVideoUrl(cleanedUrl)) continue
             if (!processedUrls.add(cleanedUrl)) continue
 
+            // Jika .m3u8, parse dan tampilkan semua kualitas variant di dalamnya
+            if (cleanedUrl.contains(".m3u8")) {
+                val m3u8Response = app.get(cleanedUrl)
+                val variantRegex = Regex("#EXT-X-STREAM-INF:.*RESOLUTION=\\d+x(\\d+).*\\n(.+)")
+                val qualities = variantRegex.findAll(m3u8Response.text)
+                    .map { it.groupValues[1] }
+                    .toSet()
+                    .mapNotNull { it.toIntOrNull() }
+                    .sorted()
+                Log.d("RumbleExtractor", "Link: $cleanedUrl\nKualitas: ${qualities.joinToString(", ")}")
+            } else {
+                val quality = getQualityFromUrl(cleanedUrl) ?: -1
+                Log.d("RumbleExtractor", "Link: $cleanedUrl\nKualitas: $quality")
+            }
+
+            // Tetap callback seperti biasa
             val quality = getQualityFromUrl(cleanedUrl) ?: -1
-
-            Log.d("RumbleExtractor", "Playing Rumble video ($quality) with URL: $cleanedUrl")
-            links.add(cleanedUrl to quality)
-        }
-
-        links.sortedByDescending { it.second }.forEach { (linkUrl, quality) ->
             callback.invoke(
                 newExtractorLink(
                     name = when {
-                        linkUrl.contains(".m3u8") -> "HLS"
-                        linkUrl.contains(".Faa.mp4") -> "Auto"
+                        cleanedUrl.contains(".m3u8") -> "HLS"
+                        cleanedUrl.contains(".Faa.mp4") -> "Auto"
                         else -> "$quality"
                     },
                     source = this@Rumble.name,
-                    url = linkUrl,
+                    url = cleanedUrl,
                     type = INFER_TYPE
                 ) {
                     this.referer = ""
@@ -80,8 +88,10 @@ class Rumble : ExtractorApi() {
             url.contains("720") -> 720
             url.contains("480") -> 480
             url.contains("360") -> 360
-            url.contains(".Faa.mp4") -> 720       // Default fallback untuk video utama
-            url.contains(".m3u8") -> 720           // Asumsi kualitas jika tidak ditentukan
+            url.contains("240") -> 240
+            url.contains("144") -> 144
+            url.contains(".Faa.mp4") -> 720       // Fallback utama
+            url.contains(".m3u8") -> 720           // Fallback jika .m3u8
             else -> null
         }
     }
