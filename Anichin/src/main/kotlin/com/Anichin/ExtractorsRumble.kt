@@ -25,68 +25,42 @@ class Rumble : ExtractorApi() {
         url: String,
         referer: String?,
         subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        callback: (com.lagradost.cloudstream3.utils.ExtractorLink) -> Unit
     ) {
-        Log.d("RumbleExtractor", "Mulai ekstraksi dari url: $url")
         val response = app.get(url, referer = referer ?: "$mainUrl/")
         val scriptData = response.document.selectFirst("script:containsData(mp4)")?.data()
             ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{")
-        if (scriptData == null) {
-            Log.d("RumbleExtractor", "Script mp4 tidak ditemukan.")
-            return
-        }
+        if (scriptData == null) return
 
         val regex = """"url":"(.*?)"|h":(.*?)\}""".toRegex()
         val matches = regex.findAll(scriptData)
 
         val processedUrls = mutableSetOf<String>()
-        var foundMaster = false
 
         for (match in matches) {
             val rawUrl = match.groupValues[1]
             if (rawUrl.isBlank()) continue
 
             val cleanedUrl = rawUrl.replace("\\/", "/")
-            Log.d("RumbleExtractor", "Cek url: $cleanedUrl")
-            if (!cleanedUrl.contains("rumble.com")) {
-                Log.d("RumbleExtractor", "Lewatkan url bukan rumble.com: $cleanedUrl")
-                continue
-            }
-            if (!cleanedUrl.endsWith(".m3u8")) {
-                Log.d("RumbleExtractor", "Lewatkan url non m3u8: $cleanedUrl")
-                continue
-            }
-            if (!processedUrls.add(cleanedUrl)) {
-                Log.d("RumbleExtractor", "Lewatkan url duplikat: $cleanedUrl")
-                continue
-            }
+            if (!cleanedUrl.contains("rumble.com")) continue
+            if (!cleanedUrl.endsWith(".m3u8")) continue
+            if (!processedUrls.add(cleanedUrl)) continue
 
-            // Cek apakah ini master playlist
             val m3u8Response = app.get(cleanedUrl)
             val variantCount = "#EXT-X-STREAM-INF".toRegex().findAll(m3u8Response.text).count()
-            Log.d("RumbleExtractor", "Jumlah variant EXT-X-STREAM-INF pada $cleanedUrl: $variantCount")
 
             if (variantCount > 1) {
-                // Ini master playlist multi kualitas, callback satu saja
-                Log.d("RumbleExtractor", "MASTER playlist ditemukan, callback: $cleanedUrl")
                 callback.invoke(
-                    ExtractorLink(
-                        name = "Rumble HLS",
-                        source = this@Rumble.name,
-                        url = cleanedUrl,
-                        type = ExtractorLinkType.M3U8,
-                        quality = -1, // Unknown, biar multi quality otomatis
-                        referer = ""
+                    newExtractorLink(
+                        this@Rumble.name,   // source
+                        "Rumble",       // name
+                        cleanedUrl,         // url
+                        ExtractorLinkType.M3U8 // type
+                        // initializer tidak perlu diisi
                     )
                 )
-                foundMaster = true
-                break // Cukup satu, langsung break
-            } else {
-                Log.d("RumbleExtractor", "Bukan master playlist, dilewati: $cleanedUrl")
+                break
             }
-        }
-        if (!foundMaster) {
-            Log.d("RumbleExtractor", "Tidak ada master playlist .m3u8 dari rumble.com ditemukan.")
         }
     }
 }
