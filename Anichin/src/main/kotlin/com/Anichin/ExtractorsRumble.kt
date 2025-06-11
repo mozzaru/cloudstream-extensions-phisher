@@ -13,6 +13,7 @@ import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.*
+import org.jsoup.Jsoup
 
 class Rumble : ExtractorApi() {
     override var name = "Rumble"
@@ -25,33 +26,30 @@ class Rumble : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val response = app.get(url, referer = referer ?: "$mainUrl/")
-//        Log.d("rumbleex","url = $url")
-
-        val playerScript = response.document
-            .selectFirst("script:containsData(mp4)")?.data()
-            ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?: return
-
-        val regex = """"url":"(.*?)".*?"h":([0-9]+)""".toRegex()
+        val response = app.get(
+            url, referer = referer ?: "$mainUrl/"
+        )
+        val playerScript =
+            response.document.selectFirst("script:containsData(mp4)")?.data()
+                ?.substringAfter("{\"mp4")?.substringBefore("\"evt\":{") ?: ""
+        val regex = """"url":"(.*?)"|h":(.*?)\}""".toRegex()
         val matches = regex.findAll(playerScript)
 
         for (match in matches) {
-            val rawHref = match.groupValues[1]
-            val rawQuality = match.groupValues[2]
-            if (rawHref.isBlank()) continue
+            val href = match.groupValues[1].replace("\\/", "/")
+            
+            // LOGCAT: Tambahkan log ini
+            Log.d("RumbleExtractor", "Playing Rumble video with URL: $href")
 
-            val href = rawHref.replace("\\/", "/")
-//            Log.d("rumbleex", "href = $href")
-//            Log.d("rumbleex", "rawQuality = $rawQuality")
             callback.invoke(
                 newExtractorLink(
-                    source = this.name,
-                    name = this.name, // Tampil: Rumble - 720p
+                    name,
+                    name,
                     url = href,
-                    type = INFER_TYPE
+                    INFER_TYPE
                 ) {
-                    this.referer = "$mainUrl/"
-                    this.quality = getQualityFromName(rawQuality)
+                    this.referer = ""
+                    this.quality = getQualityFromName("")
                 }
             )
         }
