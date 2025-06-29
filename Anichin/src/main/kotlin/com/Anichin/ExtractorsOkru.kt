@@ -1,4 +1,4 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! Alat ini dibuat oleh @keyiflerolsun | Untuk @KekikAkademi
 
 package com.Anichin
 
@@ -42,20 +42,37 @@ open class Odnoklassniki : ExtractorApi() {
             "Origin" to mainUrl,
             "User-Agent" to USER_AGENT,
         )
+        
+        // Mengubah URL video menjadi URL embed
         val embedUrl = url.replace("/video/","/videoembed/")
-        val videoReq  = app.get(embedUrl, headers=headers).text.replace("\\&quot;", "\"").replace("\\\\", "\\")
+        
+        // Mendapatkan respons dari URL embed
+        val videoReq = app.get(embedUrl, headers=headers).text
+            .replace("\\&quot;", "\"")
+            .replace("\\\\", "\\")
             .replace(Regex("\\\\u([0-9A-Fa-f]{4})")) { matchResult ->
                 Integer.parseInt(matchResult.groupValues[1], 16).toChar().toString()
             }
 
-        val videosStr = Regex(""""videos":(\[[^]]*])""").find(videoReq)?.groupValues?.get(1) ?: throw ErrorLoadingException("Video not found")
-        val videos    = AppUtils.tryParseJson<List<OkRuVideo>>(videosStr) ?: throw ErrorLoadingException("Video not found")
+        // Mengekstrak informasi video dari respons
+        val videosStr = Regex(""""videos":(\[[^]]*])""").find(videoReq)?.groupValues?.get(1) 
+            ?: throw ErrorLoadingException("Video tidak ditemukan")
+        
+        val videos = AppUtils.tryParseJson<List<OkRuVideo>>(videosStr) 
+            ?: throw ErrorLoadingException("Video tidak ditemukan")
 
+        // Memproses setiap video yang ditemukan
         for (video in videos) {
+            // Menangani berbagai format URL video
+            val videoUrl = when {
+                video.url.startsWith("//") -> "https:${video.url}"  // URL tanpa protokol
+                video.url.startsWith("/") -> "${mainUrl}${video.url}" // URL relatif
+                video.url.startsWith("http", ignoreCase = true) -> video.url // URL lengkap
+                else -> "${mainUrl}/${video.url}" // Format lainnya
+            }
 
-            val videoUrl  = if (video.url.startsWith("//")) "https:${video.url}" else video.url
-
-            val quality   = video.name.uppercase()
+            // Mengkonversi kualitas video ke format standar
+            val quality = video.name.uppercase()
                 .replace("MOBILE", "144p")
                 .replace("LOWEST", "240p")
                 .replace("LOW",    "360p")
@@ -65,21 +82,25 @@ open class Odnoklassniki : ExtractorApi() {
                 .replace("QUAD",   "1440p")
                 .replace("ULTRA",  "4k")
 
-            callback.invoke(
-                newExtractorLink(
-                    source  = this.name,
-                    name    = this.name,
-                    url     = videoUrl,
-                    type    = INFER_TYPE
-                ) {
-                    this.referer = "$mainUrl/"
-                    this.quality = getQualityFromName(quality)
-                    this.headers = headers
-                }
-            )
+            // Memastikan URL video valid sebelum diproses
+            if (videoUrl.isNotBlank() && videoUrl.startsWith("http")) {
+                callback.invoke(
+                    newExtractorLink(
+                        source  = this.name,
+                        name    = this.name,
+                        url     = videoUrl,
+                        type    = INFER_TYPE
+                    ) {
+                        this.referer = "$mainUrl/"
+                        this.quality = getQualityFromName(quality)
+                        this.headers = headers
+                    }
+                )
+            }
         }
     }
 
+    // Data class untuk menyimpan informasi video
     data class OkRuVideo(
         @JsonProperty("name") val name: String,
         @JsonProperty("url")  val url: String,
