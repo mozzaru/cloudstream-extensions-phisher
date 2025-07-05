@@ -6,7 +6,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class Anichin : MainAPI() {
-    override var mainUrl = "https://anichin.club"
+    override var mainUrl = "https://anichin.moe"
     override var name = "Anichin"
     override val hasMainPage = true
     override var lang = "id"
