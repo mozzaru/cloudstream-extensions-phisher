@@ -14,16 +14,16 @@ class Anichin : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
     override val mainPage = mainPageOf(
-        "anime/?order=update" to "Semua Rilisan Terbaru",
-        "anime/?status=ongoing&order=update" to "Ongoing",
-        "anime/?status=completed&order=update" to "Completed",
-        "anime/?type=movie&order=update" to "Movies",
-        "anime/?order=popular" to "Populer Hari Ini"
+        "anime/?order=update" to "Rilisan Terbaru",
+        "anime/?status=ongoing&order=update" to "Series Ongoing",
+        "anime/?status=completed&order=update" to "Series Completed",
+        "anime/?status=hiatus&order=update" to "Series Drop/Hiatus",
+        "anime/?type=movie&order=update" to "Movie"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val allItems = mutableListOf<SearchResponse>()
-        val maxPages = if (request.name in listOf("Semua Rilisan Terbaru", "Completed")) 3 else 1
+        val maxPages = if (request.name in listOf("Rilisan Terbaru", "Series Completed")) 3 else 1
         var hasNext = false
 
         for (i in 1..maxPages) {
@@ -166,7 +166,6 @@ class Anichin : MainAPI() {
                     val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
                     println("🎯 [Anichin] Trying to extract: $finalUrl")
 
-                    // Gunakan extractor otomatis (jika sudah registerExtractorAPI)
                     loadExtractor(finalUrl, data, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
