@@ -1,5 +1,6 @@
 package com.donghub
 
+import com.lagradost.api.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
@@ -129,7 +130,8 @@ class Donghub : MainAPI() {
                     if (!rawSrc.isNullOrBlank()) {
                         playUrl = if (rawSrc.startsWith("http")) rawSrc else "https:$rawSrc"
                     }
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
             }
 
             if (playUrl == null) playUrl = url
@@ -156,23 +158,13 @@ class Donghub : MainAPI() {
 
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value").trim()
-            if (base64.isBlank()) return@forEach
-
-            try {
-                val decoded = base64Decode(base64)
-                val iframe = Jsoup.parse(decoded).selectFirst("iframe")
-                val iframeSrc = iframe?.attr("src")?.ifBlank { iframe.attr("data-src") }?.trim()
-                if (!iframeSrc.isNullOrBlank()) {
-                    val finalUrl = if (iframeSrc.startsWith("http")) iframeSrc else "https:$iframeSrc"
-                    println("🎯 [Anichin] Trying to extract: $finalUrl")
-
-                    loadExtractor(finalUrl, data, subtitleCallback, callback)
-                }
-            } catch (e: Exception) {
-                println("❌ [Anichin] Error decoding Base64 or extracting: ${e.message}")
-            }
+            val decoded = base64Decode(base64)
+            val iframe = Jsoup.parse(decoded).selectFirst("source, iframe")
+            Log.d("kraptor", "iframe = $iframe")
+            val iframeSrc = iframe?.attr("src")?.ifBlank { iframe.attr("data-src") }?.trim().toString()
+            Log.d("kraptor", "iframeSrc = $iframeSrc")
+            loadExtractor(iframeSrc, data, subtitleCallback, callback)
         }
-
-        return true
+            return true
+        }
     }
-}

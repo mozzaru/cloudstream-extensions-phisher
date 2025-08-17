@@ -8,6 +8,6 @@ import com.lagradost.cloudstream3.plugins.Plugin
 class DonghubProvider: Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Donghub())
-        registerMainAPI(ArchiveOrgExtractor())
+        registerExtractorAPI(ArchiveOrgExtractor())
     }
 }

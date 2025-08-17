@@ -1,5 +1,6 @@
 package com.donghub
 
+import com.lagradost.api.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
@@ -14,20 +15,19 @@ class ArchiveOrgExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val safeUrl = url.replace(" ", "%20")
+        Log.d("kraptor","url = $url")
 
-        // Archive.org direct mp4/m3u8 links
-        if (safeUrl.endsWith(".mp4", true) || safeUrl.endsWith(".m3u8", true)) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = name,
-                    url = safeUrl,
-                    referer = referer ?: mainUrl,
-                    quality = Qualities.Unknown.value,  // bisa diganti getQualityFromName("720p") kalau tahu
-                    isM3u8 = safeUrl.endsWith(".m3u8", true)
+                    url = url,
+                    type = INFER_TYPE,
+                    {
+                        this.referer = referer ?: mainUrl
+                        quality = Qualities.Unknown.value
+                    }
                 )
             )
         }
     }
-}
