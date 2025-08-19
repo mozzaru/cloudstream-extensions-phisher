@@ -1,4 +1,4 @@
-package com.Anichin
+package com.anichin
 
 import android.util.Log
 import com.lagradost.cloudstream3.app

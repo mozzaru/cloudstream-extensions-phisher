@@ -1,4 +1,4 @@
-package com.Anichin
+package com.anichin
 
 import com.lagradost.api.Log
 import com.lagradost.cloudstream3.SubtitleFile
