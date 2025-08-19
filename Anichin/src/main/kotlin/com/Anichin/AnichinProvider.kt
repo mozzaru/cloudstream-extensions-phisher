@@ -8,6 +8,8 @@ import com.lagradost.cloudstream3.plugins.Plugin
 class AnichinProvider: Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Anichin())
+        registerExtractorAPI(Dailymotion())
+        registerExtractorAPI(Geodailymotion())
         registerExtractorAPI(Odnoklassniki())
         registerExtractorAPI(OkRuSSL())
         registerExtractorAPI(OkRuHTTP())

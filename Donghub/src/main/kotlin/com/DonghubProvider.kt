@@ -9,5 +9,7 @@ class DonghubProvider: Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Donghub())
         registerExtractorAPI(ArchiveOrgExtractor())
+        registerExtractorAPI(Dailymotion())
+        registerExtractorAPI(Geodailymotion())
     }
 }
