@@ -1,6 +1,6 @@
 // ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
-package com.anichin
+package com.Anichin
 
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty

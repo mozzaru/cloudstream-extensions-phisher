@@ -1,4 +1,4 @@
-package com.donghub
+package com.Donghub
 
 import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
