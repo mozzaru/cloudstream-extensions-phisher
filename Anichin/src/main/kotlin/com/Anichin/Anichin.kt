@@ -1,20 +1,22 @@
 package com.Anichin
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.utils.*
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Document
 
 class Anichin : MainAPI() {
-    override var mainUrl              = "https://anichin.moe"
-    override var name                 = "Anichin"
-    override val hasMainPage          = true
-    override var lang                 = "id"
-    override val hasDownloadSupport   = true
-    override val supportedTypes       = setOf(TvType.Movie, TvType.Anime)
+    override var mainUrl = "https://anichin.moe"
+    override var name = "Anichin"
+    override val hasMainPage = true
+    override var lang = "id"
+    override val hasDownloadSupport = true
+    override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
     private val cloudflareClient: OkHttpClient by lazy {
         app.baseClient.newBuilder()
@@ -31,7 +33,7 @@ class Anichin : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = cloudflareClient.get("$mainUrl/${request.data}&page=$page").document
+        val document = cloudflareClient.fetchDocument("$mainUrl/${request.data}&page=$page")
         val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
@@ -44,71 +46,60 @@ class Anichin : MainAPI() {
         )
     }
 
-    private fun Element.toSearchResult(): SearchResponse {
-        val title = this.select("div.bsx > a").attr("title")
-        val href = fixUrl(this.select("div.bsx > a").attr("href"))
-        val posterUrl = fixUrlNull(this.select("div.bsx > a img").attr("src"))
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
-        }
-    }
-
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
 
         for (i in 1..3) {
-            val document = cloudflareClient.get("$mainUrl/page/$i/?s=$query").document
-
+            val document = cloudflareClient.fetchDocument("$mainUrl/page/$i/?s=$query")
             val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
+            if (results.isEmpty()) break
             if (!searchResponse.containsAll(results)) {
                 searchResponse.addAll(results)
             } else {
                 break
             }
-
-            if (results.isEmpty()) break
         }
 
         return searchResponse
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = cloudflareClient.get(url).document
+        val document = cloudflareClient.fetchDocument(url)
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
-        val href = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
         var poster = document.select("div.ime > img").attr("src")
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
         val type = document.selectFirst(".spe")?.text().orEmpty()
-        val tvtag = if (type.contains("Movie", ignoreCase = true)) TvType.Movie else TvType.TvSeries
+        val isMovie = type.contains("Movie", ignoreCase = true)
 
-        return if (tvtag == TvType.TvSeries) {
-            val Eppage = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
-            val doc = cloudflareClient.get(Eppage).document
-            val episodes = doc.select("div.episodelist > ul > li").map { info ->
-                val href1 = info.select("a").attr("href")
-                val episode = info.select("a span").text().substringAfter("-").substringBeforeLast("-")
-                val posterr = info.selectFirst("a img")?.attr("src").orEmpty()
-                newEpisode(href1) {
-                    this.name = episode
-                    this.posterUrl = posterr
-                }
-            }
-
+        if (isMovie) {
+            val href = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
             if (poster.isEmpty()) {
                 poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
             }
 
-            newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
+            return newMovieLoadResponse(title, url, TvType.Movie, href) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
+            val epPage = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
+            val doc = cloudflareClient.fetchDocument(epPage)
+            val episodes = doc.select("div.episodelist > ul > li").map { info ->
+                val epUrl = info.select("a").attr("href")
+                val episodeName = info.select("a span").text().substringAfter("-").substringBeforeLast("-")
+                val epPoster = info.selectFirst("a img")?.attr("src").orEmpty()
+                newEpisode(epUrl) {
+                    name = episodeName
+                    posterUrl = epPoster
+                }
+            }.reversed()
+
             if (poster.isEmpty()) {
                 poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
             }
 
-            newMovieLoadResponse(title, url, TvType.Movie, href) {
+            return newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
                 this.posterUrl = poster
                 this.plot = description
             }
@@ -121,7 +112,7 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = cloudflareClient.get(data).document
+        val document = cloudflareClient.fetchDocument(data)
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value")
             val decoded = base64Decode(base64)
@@ -132,4 +123,20 @@ class Anichin : MainAPI() {
         }
         return true
     }
+
+    private fun Element.toSearchResult(): SearchResponse {
+        val title = this.select("div.bsx > a").attr("title")
+        val href = fixUrl(this.select("div.bsx > a").attr("href"))
+        val posterUrl = fixUrlNull(this.select("div.bsx > a img").attr("src"))
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
+        }
+    }
+}
+
+suspend fun OkHttpClient.fetchDocument(url: String): Document {
+    val request = Request.Builder().url(url).build()
+    val response = this.newCall(request).execute()
+    val body = response.body?.string() ?: throw Exception("Empty body")
+    return Jsoup.parse(body)
 }
