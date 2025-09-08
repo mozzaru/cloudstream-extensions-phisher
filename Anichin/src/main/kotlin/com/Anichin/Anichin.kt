@@ -3,12 +3,14 @@ package com.Anichin
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
+import java.util.concurrent.ConcurrentHashMap
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.moe"
@@ -18,11 +20,16 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
+    // simple in-memory cache: url -> (timestamp, document)
+    private val pageCache = ConcurrentHashMap<String, Pair<Long, Document>>()
+    private val CACHE_TTL_MS = 5 * 60 * 1000L // 5 minutes
+
     private fun randomString(length: Int): String {
         val charPool = ('a'..'z') + ('A'..'Z') + ('.')
         return List(length) { charPool.random() }.joinToString("")
     }
 
+    // Single cloudflare client reused across requests (so cookie cf_clearance can persist)
     private val cloudflareClient: OkHttpClient by lazy {
         app.baseClient.newBuilder()
             .addInterceptor(CloudflareKiller())
@@ -40,9 +47,69 @@ class Anichin : MainAPI() {
                     .build()
                 chain.proceed(request)
             }
+            // Optionally attach a CookieJar that persists cookies across runs if you implemented one.
             .build()
     }
 
+    // === Helpers ===
+
+    // Convert anichin/wp-content image -> i0.wp.com proxy to avoid requesting origin domain directly
+    private fun toCdnUrlIfPossible(url: String?): String? {
+        if (url.isNullOrBlank()) return url
+        val trimmed = url.trim()
+        // If it's already i0/i2 etc, keep it
+        if (trimmed.contains("i0.wp.com") || trimmed.contains("i2.wp.com") || trimmed.contains("i1.wp.com")) return trimmed
+        // If image path contains wp-content and host is the site, convert to i0.wp.com/{original-host}/{path}
+        return if (trimmed.contains("/wp-content/") && (trimmed.startsWith("http://") || trimmed.startsWith("https://"))) {
+            // Replace scheme+host with i0.wp.com/
+            trimmed.replace(Regex("^https?://(www\\.)?"), "https://i0.wp.com/")
+        } else {
+            trimmed
+        }
+    }
+
+    // Robust poster extraction from element
+    private fun Element.extractPoster(): String? {
+        // 1) <img src=...> or <img data-src=...> or data-lazy
+        val img = this.selectFirst("div.bsx > a img") ?: this.selectFirst("img")
+        var poster = img?.attr("src")?.takeIf { it.isNotBlank() }
+            ?: img?.attr("data-src")?.takeIf { it.isNotBlank() }
+            ?: img?.attr("data-lazy")?.takeIf { it.isNotBlank() }
+            ?: img?.attr("data-srcset")?.takeIf { it.isNotBlank() }?.split("\\s+".toRegex())?.firstOrNull()
+
+        // 2) .backdrop style background-image: url('...') (used in slider)
+        if (poster.isNullOrBlank()) {
+            val style = this.selectFirst(".backdrop")?.attr("style").orEmpty()
+            val regex = Regex("url\\(['\"]?(.*?)['\"]?\\)")
+            poster = regex.find(style)?.groupValues?.get(1)
+        }
+
+        // 3) fallback: meta og:image on document (caller can call fallback again)
+        return toCdnUrlIfPossible(fixUrlNull(poster))
+    }
+
+    // Cached fetchDocument (suspend) - uses blocking execute inside withContext to avoid main thread blocking
+    private suspend fun OkHttpClient.fetchDocumentCached(url: String, useCache: Boolean = true): Document {
+        val now = System.currentTimeMillis()
+        if (useCache) {
+            pageCache[url]?.let { (ts, doc) ->
+                if (now - ts < CACHE_TTL_MS) return doc
+                else pageCache.remove(url)
+            }
+        }
+
+        // network call off main thread
+        return withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(url).get().build()
+            val response = this@fetchDocumentCached.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty body")
+            val doc = Jsoup.parse(body)
+            pageCache[url] = Pair(now, doc)
+            doc
+        }
+    }
+
+    // === Main page config ===
     override val mainPage = mainPageOf(
         "anime/?order=update" to "Rilisan Terbaru",
         "anime/?status=ongoing&order=update" to "Series Ongoing",
@@ -52,71 +119,69 @@ class Anichin : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = cloudflareClient.fetchDocument("$mainUrl/${request.data}&page=$page")
+        val url = if (request.data.contains("?")) "$mainUrl/${request.data}&page=$page" else "$mainUrl/${request.data}?page=$page"
+        val document = cloudflareClient.fetchDocumentCached(url)
         val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
-
         return newHomePageResponse(
             list = HomePageList(
                 name = request.name,
                 list = home,
                 isHorizontalImages = false
             ),
-            hasNext = true
+            hasNext = document.selectFirst(".pagination a.next, .pagination .next") != null
         )
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
-
         for (i in 1..3) {
-            val document = cloudflareClient.fetchDocument("$mainUrl/page/$i/?s=$query")
+            val document = cloudflareClient.fetchDocumentCached("$mainUrl/page/$i/?s=$query")
             val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
-
             if (results.isEmpty()) break
             if (!searchResponse.containsAll(results)) {
                 searchResponse.addAll(results)
-            } else {
-                break
-            }
+            } else break
         }
-
         return searchResponse
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = cloudflareClient.fetchDocument(url)
+        val document = cloudflareClient.fetchDocumentCached(url)
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
         var poster = document.select("div.ime > img").attr("src")
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
-        val type = document.selectFirst(".spe")?.text().orEmpty()
-        val isMovie = type.contains("Movie", ignoreCase = true)
+        val typeText = document.selectFirst(".spe")?.text().orEmpty()
+        val isMovie = typeText.contains("Movie", ignoreCase = true)
 
         if (isMovie) {
             val href = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
             if (poster.isEmpty()) {
                 poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
             }
-
+            // use CDN for poster if possible
+            poster = toCdnUrlIfPossible(fixUrlNull(poster)).orEmpty()
             return newMovieLoadResponse(title, url, TvType.Movie, href) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
             val epPage = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
-            val doc = cloudflareClient.fetchDocument(epPage)
+            val doc = if (epPage.isNotBlank()) cloudflareClient.fetchDocumentCached(epPage) else document
             val episodes = doc.select("div.episodelist > ul > li").map { info ->
                 val epUrl = info.select("a").attr("href")
-                val episodeName = info.select("a span").text().substringAfter("-").substringBeforeLast("-")
+                val rawName = info.select("a span").text()
+                val episodeName = rawName.substringAfter("-").substringBeforeLast("-").ifEmpty { rawName }
                 val epPoster = info.selectFirst("a img")?.attr("src").orEmpty()
                 newEpisode(epUrl) {
                     name = episodeName
-                    posterUrl = epPoster
+                    posterUrl = toCdnUrlIfPossible(fixUrlNull(epPoster)).orEmpty()
                 }
             }.reversed()
 
             if (poster.isEmpty()) {
                 poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
             }
+            poster = toCdnUrlIfPossible(fixUrlNull(poster)).orEmpty()
 
             return newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
                 this.posterUrl = poster
@@ -131,7 +196,8 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = cloudflareClient.fetchDocument(data)
+        val document = cloudflareClient.fetchDocumentCached(data)
+        // mobius option approach as in your original
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value")
             val decoded = base64Decode(base64)
@@ -143,22 +209,22 @@ class Anichin : MainAPI() {
         return true
     }
 
-    private fun Element.toSearchResult(): SearchResponse {
-        val title = this.select("div.bsx > a").attr("title")
-        val href = fixUrl(this.select("div.bsx > a").attr("href"))
-        val posterUrl = fixUrlNull(this.select("div.bsx > a img").attr("src"))
-        return newMovieSearchResponse(title, href, TvType.Movie) {
+    // Robust conversion for element -> SearchResponse based on site HTML
+    private fun Element.toSearchResult(): SearchResponse? {
+        // Use .bsx block as container
+        val anchor = this.selectFirst("div.bsx > a") ?: this.selectFirst("a")
+        val title = anchor?.attr("title")?.ifEmpty { anchor?.text() } ?: this.selectFirst("h2")?.text().orEmpty()
+        val href = anchor?.attr("href") ?: return null
+        val fixedHref = fixUrl(href)
+
+        val posterUrl = this.extractPoster().ifNullOrEmpty {
+            // fallback to document-level og:image if element-based not found
+            val docOg = this.ownerDocument()?.selectFirst("meta[property=og:image]")?.attr("content")
+            toCdnUrlIfPossible(fixUrlNull(docOg))
+        }
+
+        return newMovieSearchResponse(title, fixedHref, TvType.Movie) {
             this.posterUrl = posterUrl
         }
     }
-}
-
-// Extension function fetchDocument
-suspend fun OkHttpClient.fetchDocument(url: String): Document {
-    val request = Request.Builder()
-        .url(url)
-        .build()
-    val response = this.newCall(request).execute()
-    val body = response.body?.string() ?: throw Exception("Empty body")
-    return Jsoup.parse(body)
 }
