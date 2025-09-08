@@ -10,6 +10,7 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
 class Anichin : MainAPI() {
@@ -59,10 +60,10 @@ class Anichin : MainAPI() {
         val trimmed = url.trim()
         // If it's already i0/i2 etc, keep it
         if (trimmed.contains("i0.wp.com") || trimmed.contains("i2.wp.com") || trimmed.contains("i1.wp.com")) return trimmed
-        // If image path contains wp-content and host is the site, convert to i0.wp.com/{original-host}/{path}
         return if (trimmed.contains("/wp-content/") && (trimmed.startsWith("http://") || trimmed.startsWith("https://"))) {
-            // Replace scheme+host with i0.wp.com/
-            trimmed.replace(Regex("^https?://(www\\.)?"), "https://i0.wp.com/")
+            // Build i0.wp.com/{original-host}/{path} -> reliable WP proxy format
+            val withoutScheme = trimmed.replace(Regex("^https?://"), "")
+            "https://i0.wp.com/$withoutScheme"
         } else {
             trimmed
         }
@@ -88,7 +89,7 @@ class Anichin : MainAPI() {
         return toCdnUrlIfPossible(fixUrlNull(poster))
     }
 
-    // Cached fetchDocument (suspend) - uses blocking execute inside withContext to avoid main thread blocking
+    // Cached fetchDocument (suspend) - fixed: capture receiver before withContext
     private suspend fun OkHttpClient.fetchDocumentCached(url: String, useCache: Boolean = true): Document {
         val now = System.currentTimeMillis()
         if (useCache) {
@@ -98,10 +99,11 @@ class Anichin : MainAPI() {
             }
         }
 
-        // network call off main thread
+        // capture receiver client (this) before entering lambda
+        val client = this
         return withContext(Dispatchers.IO) {
             val request = Request.Builder().url(url).get().build()
-            val response = this@fetchDocumentCached.newCall(request).execute()
+            val response = client.newCall(request).execute()
             val body = response.body?.string() ?: throw Exception("Empty body")
             val doc = Jsoup.parse(body)
             pageCache[url] = Pair(now, doc)
@@ -134,8 +136,9 @@ class Anichin : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
+        val qEncoded = URLEncoder.encode(query, "UTF-8") // <-- encode query
         for (i in 1..3) {
-            val document = cloudflareClient.fetchDocumentCached("$mainUrl/page/$i/?s=$query")
+            val document = cloudflareClient.fetchDocumentCached("$mainUrl/page/$i/?s=$qEncoded")
             val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
             if (results.isEmpty()) break
             if (!searchResponse.containsAll(results)) {
@@ -146,7 +149,8 @@ class Anichin : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = cloudflareClient.fetchDocumentCached(url)
+        val fetchUrl = fixUrl(url) // <-- ensure absolute URL before fetch
+        val document = cloudflareClient.fetchDocumentCached(fetchUrl)
         val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
         var poster = document.select("div.ime > img").attr("src")
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
@@ -166,7 +170,7 @@ class Anichin : MainAPI() {
             }
         } else {
             val epPage = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
-            val doc = if (epPage.isNotBlank()) cloudflareClient.fetchDocumentCached(epPage) else document
+            val doc = if (epPage.isNotBlank()) cloudflareClient.fetchDocumentCached(fixUrl(epPage)) else document
             val episodes = doc.select("div.episodelist > ul > li").map { info ->
                 val epUrl = info.select("a").attr("href")
                 val rawName = info.select("a span").text()
@@ -196,7 +200,7 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = cloudflareClient.fetchDocumentCached(data)
+        val document = cloudflareClient.fetchDocumentCached(fixUrl(data))
         // mobius option approach as in your original
         document.select(".mobius option").forEach { server ->
             val base64 = server.attr("value")
