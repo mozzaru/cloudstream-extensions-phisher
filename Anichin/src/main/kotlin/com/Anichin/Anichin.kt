@@ -18,11 +18,42 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
-    private val cloudflareClient: OkHttpClient by lazy {
-        app.baseClient.newBuilder()
-            .addInterceptor(CloudflareKiller())
-            .build()
+    // Fungsi untuk generate random string
+    private fun randomString(length: Int): String {
+        val charPool = ('a'..'z') + ('A'..'Z') + ('.')
+        return List(length) { charPool.random() }.joinToString("")
     }
+
+    // Override headersBuilder untuk menambahkan header kustom termasuk X-Requested-With acak
+    override fun headersBuilder() = super.headersBuilder().apply {
+        add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36")
+        add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+        add("Accept-Language", "en-US,en;q=0.5")
+        add("Connection", "keep-alive")
+        add("Sec-Fetch-Dest", "document")
+        add("Sec-Fetch-Mode", "navigate")
+        add("Sec-Fetch-Site", "same-origin")
+        add("Upgrade-Insecure-Requests", "1")
+        add("X-Requested-With", randomString((1..20).random()))
+    }
+
+    // OkHttpClient dengan interceptor hapus header X-Requested-With lama, pasang header dari headersBuilder()
+    override val cloudflareClient: OkHttpClient = app.baseClient.newBuilder()
+        .addInterceptor(CloudflareKiller())
+        .addInterceptor { chain ->
+            val request = chain.request()
+            // Buat headers baru dari headersBuilder (hapus dulu header X-Requested-With dari request awal)
+            val newHeaders = headersBuilder().apply {
+                removeAll("X-Requested-With")
+            }.build()
+
+            val newRequest = request.newBuilder()
+                .headers(newHeaders)
+                .build()
+            chain.proceed(newRequest)
+        }
+        .rateLimit(9, 2)
+        .build()
 
     override val mainPage = mainPageOf(
         "anime/?order=update" to "Rilisan Terbaru",
@@ -35,7 +66,6 @@ class Anichin : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = cloudflareClient.fetchDocument("$mainUrl/${request.data}&page=$page")
         val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
-
         return newHomePageResponse(
             list = HomePageList(
                 name = request.name,
@@ -48,11 +78,9 @@ class Anichin : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
-
         for (i in 1..3) {
             val document = cloudflareClient.fetchDocument("$mainUrl/page/$i/?s=$query")
             val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
-
             if (results.isEmpty()) break
             if (!searchResponse.containsAll(results)) {
                 searchResponse.addAll(results)
@@ -60,7 +88,6 @@ class Anichin : MainAPI() {
                 break
             }
         }
-
         return searchResponse
     }
 
@@ -77,7 +104,6 @@ class Anichin : MainAPI() {
             if (poster.isEmpty()) {
                 poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
             }
-
             return newMovieLoadResponse(title, url, TvType.Movie, href) {
                 this.posterUrl = poster
                 this.plot = description
@@ -134,8 +160,11 @@ class Anichin : MainAPI() {
     }
 }
 
+// Extension function fetchDocument
 suspend fun OkHttpClient.fetchDocument(url: String): Document {
-    val request = Request.Builder().url(url).build()
+    val request = Request.Builder()
+        .url(url)
+        .build()
     val response = this.newCall(request).execute()
     val body = response.body?.string() ?: throw Exception("Empty body")
     return Jsoup.parse(body)
