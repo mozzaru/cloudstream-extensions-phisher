@@ -4,174 +4,119 @@ import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
-import com.lagradost.cloudstream3.network.CloudflareKiller
-import okhttp3.Interceptor
-import okhttp3.Response
 
 class Anichin : MainAPI() {
-    override var mainUrl = "https://anichin.moe"
-    override var name = "Anichin"
-    override val hasMainPage = true
-    override var lang = "id"
-    override val hasDownloadSupport = true
-    override val supportedTypes = setOf(TvType.Anime, TvType.Movie)
-
-    // Cloudflare bypass
-    private val cfKiller = CloudflareKiller()
+    override var mainUrl              = "https://anichin.moe"
+    override var name                 = "Anichin"
+    override val hasMainPage          = true
+    override var lang                 = "id"
+    override val hasDownloadSupport   = true
+    override val supportedTypes       = setOf(TvType.Movie,TvType.Anime)
 
     override val mainPage = mainPageOf(
-        "" to "Rilisan Terbaru",
-        "anime/?status=ongoing" to "Series Ongoing",
-        "anime/?status=completed" to "Series Completed",
-        "anime/?status=hiatus" to "Series Drop/Hiatus",
-        "anime/?type=movie" to "Movie"
+        "anime/?order=update" to "Rilisan Terbaru",
+        "anime/?status=ongoing&order=update" to "Series Ongoing",
+        "anime/?status=completed&order=update" to "Series Completed",
+        "anime/?status=hiatus&order=update" to "Series Drop/Hiatus",
+        "anime/?type=movie&order=update" to "Movie"
     )
 
-    // Fungsi untuk mendapatkan document dengan Cloudflare bypass
-    private suspend fun getProtectedDocument(url: String): org.jsoup.nodes.Document {
-        return try {
-            // Gunakan app.get dengan interceptor CloudflareKiller
-            app.get(url, interceptor = cfKiller).document
-        } catch (e: Exception) {
-            // Fallback ke app.get biasa jika gagal
-            app.get(url).document
-        }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page > 1) "${mainUrl}/${request.data}&page=$page" else "${mainUrl}/${request.data}"
-        
-        val document = getProtectedDocument(url)
-        
-        val home = document.select("article.bs").mapNotNull { it.toSearchResult() }
+        val document = app.get("$mainUrl/${request.data}&page=$page").document
+        val home     = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
-            list = HomePageList(
-                name = request.name,
-                list = home,
+            list    = HomePageList(
+                name               = request.name,
+                list               = home,
                 isHorizontalImages = false
             ),
-            hasNext = home.isNotEmpty()
+            hasNext = true
         )
     }
 
     private fun Element.toSearchResult(): SearchResponse {
-        val title = this.selectFirst("div.tt h2")?.text()?.trim() ?: this.selectFirst("div.tt")?.text()?.trim()
-            ?: "No Title"
-        
-        val href = fixUrl(this.selectFirst("a")?.attr("href") ?: "")
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        
-        val type = this.selectFirst("div.typez")?.text()?.trim() ?: "Anime"
-        
-        return if (type.contains("Movie", true)) {
-            newMovieSearchResponse(title, href, TvType.Movie) {
-                this.posterUrl = posterUrl
-            }
-        } else {
-            newAnimeSearchResponse(title, href, TvType.Anime) {
-                this.posterUrl = posterUrl
-            }
+        val title     = this.select("div.bsx > a").attr("title")
+        val href      = fixUrl(this.select("div.bsx > a").attr("href"))
+        val posterUrl = fixUrlNull(this.select("div.bsx > a img").attr("src"))
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
         }
     }
 
+
     override suspend fun search(query: String): List<SearchResponse> {
         val searchResponse = mutableListOf<SearchResponse>()
-        
-        val searchUrl = "$mainUrl/?s=${query.replace(" ", "+")}"
-        val document = getProtectedDocument(searchUrl)
-        
-        val results = document.select("article.bs").mapNotNull { it.toSearchResult() }
-        searchResponse.addAll(results)
+
+        for (i in 1..3) {
+            val document = app.get("${mainUrl}/page/$i/?s=$query").document
+
+            val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+
+            if (!searchResponse.containsAll(results)) {
+                searchResponse.addAll(results)
+            } else {
+                break
+            }
+
+            if (results.isEmpty()) break
+        }
 
         return searchResponse
     }
 
+    @Suppress("SuspiciousIndentation")
     override suspend fun load(url: String): LoadResponse {
-        val document = getProtectedDocument(url)
-        
-        val title = document.selectFirst("h1.entry-title")?.text()?.trim() ?: "No Title"
-        val poster = document.selectFirst("div.thumb img")?.attr("src") 
-            ?: document.selectFirst("meta[property=og:image]")?.attr("content") 
-            ?: ""
-        
+        val document = app.get(url).document
+        val title       = document.selectFirst("h1.entry-title")?.text()?.trim().toString()
+        val href=document.selectFirst(".eplister li > a")?.attr("href") ?:""
+        var poster = document.select("div.ime > img").attr("src")
         val description = document.selectFirst("div.entry-content")?.text()?.trim()
-            ?: document.selectFirst("meta[property=og:description]")?.attr("content") 
-            ?: ""
-        
-        // Determine type
-        val typeText = document.selectFirst("div.spe")?.text()?.lowercase() ?: ""
-        val isMovie = typeText.contains("movie") || document.selectFirst("div.typez.Movie") != null
-        
-        return if (isMovie) {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
+        val type=document.selectFirst(".spe")?.text().toString()
+        val tvtag=if (type.contains("Movie")) TvType.Movie else TvType.TvSeries
+        return if (tvtag == TvType.TvSeries) {
+            val Eppage= document.selectFirst(".eplister li > a")?.attr("href") ?:""
+            val doc= app.get(Eppage).document
+            val episodes=doc.select("div.episodelist > ul > li").map { info->
+                        val href1 = info.select("a").attr("href")
+                        val episode = info.select("a span").text().substringAfter("-").substringBeforeLast("-")
+                        val posterr=info.selectFirst("a img")?.attr("src") ?:""
+                        newEpisode(href1)
+                        {
+                            this.name=episode
+                            this.posterUrl=posterr
+                        }
+            }
+            if (poster.isEmpty())
+            {
+                poster=document.selectFirst("meta[property=og:image]")?.attr("content")?.trim().toString()
+            }
+            newTvSeriesLoadResponse(title, url, TvType.Anime, episodes.reversed()) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
-            val episodes = document.select("div.eplister li").mapNotNull { ep ->
-                val epNum = ep.selectFirst("div.epl-num")?.text()?.trim() ?: "1"
-                val epUrl = fixUrl(ep.selectFirst("a")?.attr("href") ?: "")
-                val epTitle = ep.selectFirst("div.epl-title")?.text()?.trim() ?: "Episode $epNum"
-                val epPoster = ep.selectFirst("img")?.attr("src") ?: poster
-                
-                newEpisode(epUrl) {
-                    this.name = epTitle
-                    this.posterUrl = epPoster
-                    this.episode = epNum.toIntOrNull()
-                }
+            if (poster.isEmpty())
+            {
+                poster=document.selectFirst("meta[property=og:image]")?.attr("content")?.trim().toString()
             }
-            
-            newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
+            newMovieLoadResponse(title, url, TvType.Movie, href) {
                 this.posterUrl = poster
                 this.plot = description
             }
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val document = getProtectedDocument(data)
-        
-        // Extract video iframes/players
-        document.select("div.mobius option, iframe").forEach { element ->
-            var videoUrl = when {
-                element.`is`("option") -> {
-                    val base64 = element.attr("value")
-                    if (base64.isNotBlank()) {
-                        try {
-                            val decoded = base64Decode(base64)
-                            Jsoup.parse(decoded).selectFirst("iframe")?.attr("src")
-                        } catch (e: Exception) {
-                            null
-                        }
-                    } else null
-                }
-                element.`is`("iframe") -> element.attr("src")
-                else -> null
-            }
-            
-            videoUrl?.let { url ->
-                if (url.isNotBlank()) {
-                    loadExtractor(fixUrl(url), subtitleCallback, callback)
-                }
-            }
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+        val document = app.get(data).document
+        document.select(".mobius option").forEach { server->
+            val base64 = server.attr("value")
+            val decoded=base64Decode(base64)
+            val doc = Jsoup.parse(decoded)
+            val href=doc.select("iframe").attr("src")
+            val url = fixUrl(href)
+            loadExtractor(url,subtitleCallback, callback)
         }
-        
         return true
-    }
-
-    // Tambahkan interceptor untuk video streams
-    override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor {
-        return object : Interceptor {
-            override fun intercept(chain: Interceptor.Chain): Response {
-                val response = cfKiller.intercept(chain)
-                return response
-            }
-        }
     }
 }
