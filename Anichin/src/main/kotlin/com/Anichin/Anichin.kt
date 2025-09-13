@@ -4,7 +4,6 @@ import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
-import com.lagradost.cloudstream3.network.CloudflareKiller
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.moe"
@@ -13,9 +12,6 @@ class Anichin : MainAPI() {
     override var lang = "id"
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Anime, TvType.Movie)
-
-    // Cloudflare bypass
-    private val cfKiller = CloudflareKiller()
 
     // Header seperti browser normal
     private val browserHeaders = mapOf(
@@ -43,11 +39,11 @@ class Anichin : MainAPI() {
     // Fungsi untuk mendapatkan document dengan Cloudflare bypass
     private suspend fun getDocumentWithCloudflare(url: String): org.jsoup.nodes.Document {
         return try {
-            // Gunakan app.get dengan headers browser-like
-            app.get(url, headers = browserHeaders, cloudflare = true).document
+            // Gunakan app.get dengan headers browser-like dan enableCloudflare
+            app.get(url, headers = browserHeaders, enableCloudflare = true).document
         } catch (e: Exception) {
             // Fallback ke tanpa headers jika masih gagal
-            app.get(url, cloudflare = true).document
+            app.get(url, enableCloudflare = true).document
         }
     }
 
