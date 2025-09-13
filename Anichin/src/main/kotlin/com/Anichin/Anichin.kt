@@ -3,9 +3,10 @@ package com.Anichin
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Headers
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Document
@@ -18,111 +19,119 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.Anime)
 
-    private fun randomString(length: Int): String {
-        val charPool = ('a'..'z') + ('A'..'Z') + ('.')
-        return List(length) { charPool.random() }.joinToString("")
-    }
-
-    private val cloudflareClient: OkHttpClient by lazy {
-        app.baseClient.newBuilder()
-            .addInterceptor(CloudflareKiller())
-            .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36")
-                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                    .header("Accept-Language", "en-US,en;q=0.5")
-                    .header("Connection", "keep-alive")
-                    .header("Sec-Fetch-Dest", "document")
-                    .header("Sec-Fetch-Mode", "navigate")
-                    .header("Sec-Fetch-Site", "same-origin")
-                    .header("Upgrade-Insecure-Requests", "1")
-                    .header("X-Requested-With", randomString((1..20).random()))
-                    .build()
-                chain.proceed(request)
-            }
-            .build()
-    }
+    // Gunakan CloudflareKiller untuk melewati proteksi
+    private val cloudflareKiller by lazy { CloudflareKiller() }
 
     override val mainPage = mainPageOf(
-        "anime/?order=update" to "Rilisan Terbaru",
-        "anime/?status=ongoing&order=update" to "Series Ongoing",
-        "anime/?status=completed&order=update" to "Series Completed",
-        "anime/?status=hiatus&order=update" to "Series Drop/Hiatus",
-        "anime/?type=movie&order=update" to "Movie"
+        "$mainUrl/" to "Terbaru",
+        "$mainUrl/page/2/" to "Halaman 2"
     )
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = cloudflareClient.fetchDocument("$mainUrl/${request.data}&page=$page")
-        val home = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
+    // Fungsi untuk mendapatkan dokumen dengan bypass Cloudflare
+    private suspend fun getDocument(url: String): Document {
+        return try {
+            // Coba akses langsung terlebih dahulu
+            val directResponse = app.get(url)
+            var document = directResponse.document
+            
+            // Periksa apakah halaman mengandung Cloudflare challenge
+            if (document.select("title").text().contains("Cloudflare") || 
+                document.select("div#challenge-error-title").isNotEmpty() ||
+                document.select("form#challenge-form").isNotEmpty()) {
+                
+                // Gunakan CloudflareKiller jika terdeteksi Cloudflare
+                document = withContext(Dispatchers.IO) {
+                    cloudflareKiller.getDocument(
+                        client = app.client,
+                        url = url,
+                        headers = directResponse.headers,
+                        cookies = directResponse.cookies,
+                        body = directResponse.body
+                    )
+                }
+            }
+            document
+        } catch (e: Exception) {
+            // Fallback ke request biasa jika terjadi error
+            app.get(url).document
+        }
+    }
 
-        return newHomePageResponse(
-            list = HomePageList(
-                name = request.name,
-                list = home,
-                isHorizontalImages = false
-            ),
-            hasNext = true
-        )
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
+        val document = getDocument(request.data)
+        val homePageList = mutableListOf<HomePageList>()
+
+        // Ekstraksi daftar anime dari berbagai bagian
+        val sections = document.select("div.listupd")
+        
+        sections.forEach { section ->
+            val parentTitle = section.previousElementSibling()?.select("h2, h3")?.text() ?: "Anime Terbaru"
+            val animeList = section.select("article.bs").mapNotNull { element ->
+                parseAnimeFromElement(element)
+            }
+            
+            if (animeList.isNotEmpty()) {
+                homePageList.add(HomePageList(parentTitle, animeList))
+            }
+        }
+
+        return HomePageResponse(homePageList)
+    }
+
+    private fun parseAnimeFromElement(element: Element): AnimeSearchResponse? {
+        return try {
+            val title = element.select("div.tt h2").text()
+            val url = element.select("a").attr("href")
+            val image = element.select("img").attr("src")
+            val episodeText = element.select("span.epx").text()
+            val episode = episodeText.filter { it.isDigit() }.toIntOrNull() ?: 1
+            
+            AnimeSearchResponse(
+                name = title,
+                url = url,
+                apiName = this.name,
+                type = TvType.Anime,
+                posterUrl = image,
+                episode = episode
+            )
+        } catch (e: Exception) {
+            null
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val searchResponse = mutableListOf<SearchResponse>()
-
-        for (i in 1..3) {
-            val document = cloudflareClient.fetchDocument("$mainUrl/page/$i/?s=$query")
-            val results = document.select("div.listupd > article").mapNotNull { it.toSearchResult() }
-
-            if (results.isEmpty()) break
-            if (!searchResponse.containsAll(results)) {
-                searchResponse.addAll(results)
-            } else {
-                break
-            }
+        val searchUrl = "$mainUrl/?s=$query"
+        val document = getDocument(searchUrl)
+        
+        return document.select("article.bs").mapNotNull { element ->
+            parseAnimeFromElement(element)
         }
-
-        return searchResponse
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = cloudflareClient.fetchDocument(url)
-        val title = document.selectFirst("h1.entry-title")?.text()?.trim().orEmpty()
-        var poster = document.select("div.ime > img").attr("src")
-        val description = document.selectFirst("div.entry-content")?.text()?.trim()
-        val type = document.selectFirst(".spe")?.text().orEmpty()
-        val isMovie = type.contains("Movie", ignoreCase = true)
+        val document = getDocument(url)
+        
+        val title = document.select("h1.entry-title").text()
+        val description = document.select("div.entry-content p").text()
+        val poster = document.select("div.thumb img").attr("src")
+        val episodes = document.select("div.eplister ul li").map { epElement ->
+            val episodeNum = epElement.select("div.epl-num").text().toIntOrNull() ?: 0
+            val episodeUrl = epElement.select("a").attr("href")
+            Episode(episodeUrl, episode = episodeNum)
+        }.reversed()
 
-        if (isMovie) {
-            val href = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
-            if (poster.isEmpty()) {
-                poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
-            }
-
-            return newMovieLoadResponse(title, url, TvType.Movie, href) {
-                this.posterUrl = poster
-                this.plot = description
-            }
-        } else {
-            val epPage = document.selectFirst(".eplister li > a")?.attr("href").orEmpty()
-            val doc = cloudflareClient.fetchDocument(epPage)
-            val episodes = doc.select("div.episodelist > ul > li").map { info ->
-                val epUrl = info.select("a").attr("href")
-                val episodeName = info.select("a span").text().substringAfter("-").substringBeforeLast("-")
-                val epPoster = info.selectFirst("a img")?.attr("src").orEmpty()
-                newEpisode(epUrl) {
-                    name = episodeName
-                    posterUrl = epPoster
-                }
-            }.reversed()
-
-            if (poster.isEmpty()) {
-                poster = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
-            }
-
-            return newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
-                this.posterUrl = poster
-                this.plot = description
-            }
-        }
+        return AnimeLoadResponse(
+            name = title,
+            url = url,
+            apiName = this.name,
+            type = TvType.Anime,
+            posterUrl = poster,
+            episodes = episodes,
+            plot = description
+        )
     }
 
     override suspend fun loadLinks(
@@ -131,34 +140,26 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = cloudflareClient.fetchDocument(data)
-        document.select(".mobius option").forEach { server ->
-            val base64 = server.attr("value")
-            val decoded = base64Decode(base64)
-            val doc = Jsoup.parse(decoded)
-            val href = doc.select("iframe").attr("src")
-            val url = fixUrl(href)
-            loadExtractor(url, subtitleCallback, callback)
+        val document = getDocument(data)
+        val links = document.select("div.download-eps a")
+        
+        links.forEach { link ->
+            val url = link.attr("href")
+            val quality = link.text()
+            
+            if (url.isNotBlank()) {
+                callback(
+                    ExtractorLink(
+                        name = this.name,
+                        source = url,
+                        url = url,
+                        quality = Qualities.Unknown.value,
+                        isM3u8 = url.contains("m3u8")
+                    )
+                )
+            }
         }
+        
         return true
     }
-
-    private fun Element.toSearchResult(): SearchResponse {
-        val title = this.select("div.bsx > a").attr("title")
-        val href = fixUrl(this.select("div.bsx > a").attr("href"))
-        val posterUrl = fixUrlNull(this.select("div.bsx > a img").attr("src"))
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
-        }
-    }
-}
-
-// Extension function fetchDocument
-suspend fun OkHttpClient.fetchDocument(url: String): Document {
-    val request = Request.Builder()
-        .url(url)
-        .build()
-    val response = this.newCall(request).execute()
-    val body = response.body?.string() ?: throw Exception("Empty body")
-    return Jsoup.parse(body)
 }
