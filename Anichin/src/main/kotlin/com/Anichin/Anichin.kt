@@ -4,6 +4,9 @@ import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.moe"
@@ -13,20 +16,8 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Anime, TvType.Movie)
 
-    // Header seperti browser normal
-    private val browserHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language" to "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding" to "gzip, deflate, br",
-        "Connection" to "keep-alive",
-        "Upgrade-Insecure-Requests" to "1",
-        "Sec-Fetch-Dest" to "document",
-        "Sec-Fetch-Mode" to "navigate",
-        "Sec-Fetch-Site" to "none",
-        "Sec-Fetch-User" to "?1",
-        "Cache-Control" to "max-age=0"
-    )
+    // Cloudflare bypass - inisialisasi CloudflareKiller seperti referensi
+    private val cfKiller = CloudflareKiller()
 
     override val mainPage = mainPageOf(
         "" to "Rilisan Terbaru",
@@ -37,20 +28,20 @@ class Anichin : MainAPI() {
     )
 
     // Fungsi untuk mendapatkan document dengan Cloudflare bypass
-    private suspend fun getDocumentWithCloudflare(url: String): org.jsoup.nodes.Document {
+    private suspend fun getProtectedDocument(url: String): org.jsoup.nodes.Document {
         return try {
-            // Gunakan app.get dengan headers browser-like dan enableCloudflare
-            app.get(url, headers = browserHeaders, enableCloudflare = true).document
+            // Gunakan CloudflareKiller.getDocument() seperti pada referensi
+            cfKiller.getDocument(url, timeout = 30)
         } catch (e: Exception) {
-            // Fallback ke tanpa headers jika masih gagal
-            app.get(url, enableCloudflare = true).document
+            // Fallback ke app.get biasa jika CloudflareKiller gagal
+            app.get(url).document
         }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page > 1) "${mainUrl}/${request.data}&page=$page" else "${mainUrl}/${request.data}"
         
-        val document = getDocumentWithCloudflare(url)
+        val document = getProtectedDocument(url)
         
         val home = document.select("article.bs").mapNotNull { it.toSearchResult() }
 
@@ -88,7 +79,7 @@ class Anichin : MainAPI() {
         val searchResponse = mutableListOf<SearchResponse>()
         
         val searchUrl = "$mainUrl/?s=${query.replace(" ", "+")}"
-        val document = getDocumentWithCloudflare(searchUrl)
+        val document = getProtectedDocument(searchUrl)
         
         val results = document.select("article.bs").mapNotNull { it.toSearchResult() }
         searchResponse.addAll(results)
@@ -97,7 +88,7 @@ class Anichin : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = getDocumentWithCloudflare(url)
+        val document = getProtectedDocument(url)
         
         val title = document.selectFirst("h1.entry-title")?.text()?.trim() ?: "No Title"
         val poster = document.selectFirst("div.thumb img")?.attr("src") 
@@ -144,7 +135,7 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = getDocumentWithCloudflare(data)
+        val document = getProtectedDocument(data)
         
         // Extract video iframes/players
         document.select("div.mobius option, iframe").forEach { element ->
@@ -172,5 +163,15 @@ class Anichin : MainAPI() {
         }
         
         return true
+    }
+
+    // Tambahkan interceptor untuk video streams seperti pada referensi
+    override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor {
+        return object : Interceptor {
+            override fun intercept(chain: Interceptor.Chain): Response {
+                val response = cfKiller.intercept(chain)
+                return response
+            }
+        }
     }
 }
