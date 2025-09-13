@@ -16,7 +16,7 @@ class Anichin : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Anime, TvType.Movie)
 
-    // Cloudflare bypass - inisialisasi CloudflareKiller seperti referensi
+    // Cloudflare bypass
     private val cfKiller = CloudflareKiller()
 
     override val mainPage = mainPageOf(
@@ -30,10 +30,10 @@ class Anichin : MainAPI() {
     // Fungsi untuk mendapatkan document dengan Cloudflare bypass
     private suspend fun getProtectedDocument(url: String): org.jsoup.nodes.Document {
         return try {
-            // Gunakan CloudflareKiller.getDocument() seperti pada referensi
-            cfKiller.getDocument(url, timeout = 30)
+            // Gunakan app.get dengan interceptor CloudflareKiller
+            app.get(url, interceptor = cfKiller).document
         } catch (e: Exception) {
-            // Fallback ke app.get biasa jika CloudflareKiller gagal
+            // Fallback ke app.get biasa jika gagal
             app.get(url).document
         }
     }
@@ -165,7 +165,7 @@ class Anichin : MainAPI() {
         return true
     }
 
-    // Tambahkan interceptor untuk video streams seperti pada referensi
+    // Tambahkan interceptor untuk video streams
     override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor {
         return object : Interceptor {
             override fun intercept(chain: Interceptor.Chain): Response {
