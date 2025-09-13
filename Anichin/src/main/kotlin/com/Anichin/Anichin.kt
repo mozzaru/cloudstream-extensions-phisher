@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
 import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.network.WebViewResolver
 
 class Anichin : MainAPI() {
     override var mainUrl = "https://anichin.moe"
@@ -14,14 +13,13 @@ class Anichin : MainAPI() {
     override var lang = "id"
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Anime, TvType.Movie)
-    override val usesWebView = true // Enable WebView untuk Cloudflare
 
-    // Cloudflare bypass dengan header browser-like
+    // Cloudflare bypass
     private val cfKiller = CloudflareKiller()
 
     // Header seperti browser normal
     private val browserHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language" to "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
         "Accept-Encoding" to "gzip, deflate, br",
@@ -43,22 +41,22 @@ class Anichin : MainAPI() {
     )
 
     // Fungsi untuk mendapatkan document dengan Cloudflare bypass
-    private suspend fun getDocument(url: String): org.jsoup.nodes.Document {
+    private suspend fun getDocumentWithCloudflare(url: String): org.jsoup.nodes.Document {
         return try {
-            // Coba dengan CloudflareKiller dulu
-            cfKiller.getDocument(url, headers = browserHeaders, timeout = 45, maxAttempts = 3)
+            // Gunakan app.get dengan headers browser-like
+            app.get(url, headers = browserHeaders, cloudflare = true).document
         } catch (e: Exception) {
-            // Fallback ke app.get dengan WebView resolver
-            app.get(url, headers = browserHeaders, enableWebView = true).document
+            // Fallback ke tanpa headers jika masih gagal
+            app.get(url, cloudflare = true).document
         }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page > 1) "${mainUrl}/${request.data}&page=$page" else "${mainUrl}/${request.data}"
         
-        val document = getDocument(url)
+        val document = getDocumentWithCloudflare(url)
         
-        val home = document.select("article.bs, div.bs, .post-show").mapNotNull { it.toSearchResult() }
+        val home = document.select("article.bs").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
             list = HomePageList(
@@ -71,15 +69,13 @@ class Anichin : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse {
-        val title = this.selectFirst("div.tt h2, h2.tt, .title")?.text()?.trim() 
-            ?: this.selectFirst("div.tt, .tt")?.text()?.trim()
+        val title = this.selectFirst("div.tt h2")?.text()?.trim() ?: this.selectFirst("div.tt")?.text()?.trim()
             ?: "No Title"
         
         val href = fixUrl(this.selectFirst("a")?.attr("href") ?: "")
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src") 
-            ?: this.selectFirst("img")?.attr("data-src"))
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
         
-        val type = this.selectFirst("div.typez, .typez, .type")?.text()?.trim() ?: "Anime"
+        val type = this.selectFirst("div.typez")?.text()?.trim() ?: "Anime"
         
         return if (type.contains("Movie", true)) {
             newMovieSearchResponse(title, href, TvType.Movie) {
@@ -96,29 +92,29 @@ class Anichin : MainAPI() {
         val searchResponse = mutableListOf<SearchResponse>()
         
         val searchUrl = "$mainUrl/?s=${query.replace(" ", "+")}"
-        val document = getDocument(searchUrl)
+        val document = getDocumentWithCloudflare(searchUrl)
         
-        val results = document.select("article.bs, div.bs, .post-show").mapNotNull { it.toSearchResult() }
+        val results = document.select("article.bs").mapNotNull { it.toSearchResult() }
         searchResponse.addAll(results)
 
         return searchResponse
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = getDocument(url)
+        val document = getDocumentWithCloudflare(url)
         
-        val title = document.selectFirst("h1.entry-title, h1.title, .entry-title")?.text()?.trim() ?: "No Title"
-        val poster = document.selectFirst("div.thumb img, .thumbnail img, img.wp-post-image")?.attr("src") 
+        val title = document.selectFirst("h1.entry-title")?.text()?.trim() ?: "No Title"
+        val poster = document.selectFirst("div.thumb img")?.attr("src") 
             ?: document.selectFirst("meta[property=og:image]")?.attr("content") 
             ?: ""
         
-        val description = document.selectFirst("div.entry-content, .description, .synopsis")?.text()?.trim()
+        val description = document.selectFirst("div.entry-content")?.text()?.trim()
             ?: document.selectFirst("meta[property=og:description]")?.attr("content") 
             ?: ""
         
         // Determine type
-        val typeText = document.selectFirst("div.spe, .spe, .type")?.text()?.lowercase() ?: ""
-        val isMovie = typeText.contains("movie") || document.selectFirst(".typez.Movie, .movie-tag") != null
+        val typeText = document.selectFirst("div.spe")?.text()?.lowercase() ?: ""
+        val isMovie = typeText.contains("movie") || document.selectFirst("div.typez.Movie") != null
         
         return if (isMovie) {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -126,10 +122,10 @@ class Anichin : MainAPI() {
                 this.plot = description
             }
         } else {
-            val episodes = document.select("div.eplister li, .episode-list li, .episode-item").mapNotNull { ep ->
-                val epNum = ep.selectFirst("div.epl-num, .ep-num, .number")?.text()?.trim() ?: "1"
+            val episodes = document.select("div.eplister li").mapNotNull { ep ->
+                val epNum = ep.selectFirst("div.epl-num")?.text()?.trim() ?: "1"
                 val epUrl = fixUrl(ep.selectFirst("a")?.attr("href") ?: "")
-                val epTitle = ep.selectFirst("div.epl-title, .ep-title, .title")?.text()?.trim() ?: "Episode $epNum"
+                val epTitle = ep.selectFirst("div.epl-title")?.text()?.trim() ?: "Episode $epNum"
                 val epPoster = ep.selectFirst("img")?.attr("src") ?: poster
                 
                 newEpisode(epUrl) {
@@ -152,10 +148,10 @@ class Anichin : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = getDocument(data)
+        val document = getDocumentWithCloudflare(data)
         
-        // Extract video iframes/players dengan berbagai selector
-        document.select("div.mobius option, iframe, .video-player, .player-container").forEach { element ->
+        // Extract video iframes/players
+        document.select("div.mobius option, iframe").forEach { element ->
             var videoUrl = when {
                 element.`is`("option") -> {
                     val base64 = element.attr("value")
@@ -169,7 +165,6 @@ class Anichin : MainAPI() {
                     } else null
                 }
                 element.`is`("iframe") -> element.attr("src")
-                element.hasAttr("data-src") -> element.attr("data-src")
                 else -> null
             }
             
